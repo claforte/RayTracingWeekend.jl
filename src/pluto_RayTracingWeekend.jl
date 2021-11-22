@@ -14,7 +14,7 @@ using LinearAlgebra
 begin
 	using StaticArrays
 	Option{T} = Union{Missing, T}
-	Vec3 = SVector{3, Float32}
+	Vec3 = SVector{3}
 end
 
 # ╔═╡ 611d5eae-4b09-11ec-27bf-ef4a1ecdcc41
@@ -88,7 +88,7 @@ Use these convenient unicode characters:
 t_col = Vec3(1.0, 0.5, 0.0) # test color
 
 # ╔═╡ 252fed01-c291-475a-a6a8-09ff20bdf8a7
-function color(v::Vec3) RGB{Float32}(v[1], v[2], v[3]) end
+function color(v::Vec3) RGB(v[1], v[2], v[3]) end
 
 # ╔═╡ cfbcb883-d12e-4ad3-a084-064749bddcdb
 color(t_col)
@@ -100,7 +100,7 @@ struct Ray
 end
 
 # ╔═╡ 81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
-function point(r::Ray, t::Float32)::Vec3 # point at parameter t
+function point(r::Ray, t::AbstractFloat)::Vec3 # point at parameter t
 	r.origin .+ t .* r.dir
 end
 
@@ -109,14 +109,14 @@ md"# Chapter 3: Rays, simple camera, and background"
 
 # ╔═╡ cbb6418c-79e9-4359-80a6-40a8fa40679e
 function sky_color(ray::Ray)
-	unit_dir = normalize(ray.dir) # unit direction
-	t = Float32(0.5*unit_dir[2] + 1.0)
+	# NOTE: unlike in the C++ implementation, we normalize the ray direction.
+	t = 0.5*ray.dir[2] + 1.0
 	(1-t)*Vec3(1,1,1) + t*Vec3(0.5, 0.7, 1.0)
 end
 
 # ╔═╡ 64ef0313-2d2b-49d5-a1a1-3b04426a82f8
 begin
-	color(sky_color(Ray(Vec3(0,0,0), Vec3(0,-2,0))))
+	color(sky_color(Ray(Vec3(0,0,0), Vec3(0,-1,0))))
 end
 
 # ╔═╡ 971777a6-f269-4344-8dba-7a55118396e5
@@ -130,11 +130,11 @@ function main(nx::Int, ny::Int, scene)
 	vertical = Vec3(0, 2, 0)
 	origin = Vec3(0, 0, 0)
 	
-	img = zeros(RGB{Float32}, ny, nx)
+	img = zeros(RGB, ny, nx)
 	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
 		u = j/nx
 		v = (ny-i)/ny # Y-up!
-		ray = Ray(origin, lower_left_corner + u*horizontal + v*vertical)
+		ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
 		#r = x/nx
 		#g = y/ny
 		#b = 0.2
@@ -150,7 +150,7 @@ main(200,100, sky_color)
 md"# Chapter 4: Add a sphere"
 
 # ╔═╡ c00e2004-2002-4dd2-98ed-f898ef2c14f1
-function hit_sphere(center::Vec3, radius::AbstractFloat, r::Ray)
+function hit_sphere1(center::Vec3, radius::AbstractFloat, r::Ray)
 	oc = r.origin - center
 	a = r.dir ⋅ r.dir
 	b = 2oc ⋅ r.dir
@@ -160,8 +160,8 @@ function hit_sphere(center::Vec3, radius::AbstractFloat, r::Ray)
 end
 
 # ╔═╡ b7399fb8-6205-41ea-9c70-eb62daedcefb
-function sphere_scene(r::Ray)
-	if hit_sphere(Vec3(0,0,-1), 0.5, r) # sphere of radius 0.5 centered at z=-1
+function sphere_scene1(r::Ray)
+	if hit_sphere1(Vec3(0,0,-1), 0.5, r) # sphere of radius 0.5 centered at z=-1
 		return Vec3(1,0,0) # red
 	else
 		sky_color(r)
@@ -169,7 +169,39 @@ function sphere_scene(r::Ray)
 end
 
 # ╔═╡ 1d04159d-87bd-4cf8-a73c-817f20ca1026
-main(200,100,sphere_scene)
+main(200,100,sphere_scene1)
+
+# ╔═╡ fed81f09-e4a0-433f-99e8-261096114b7b
+md"# Chapter 5: Surface normals and multiple objects"
+
+# ╔═╡ 24e8740a-8e44-4206-b2b6-c4a55002dad8
+function hit_sphere2(center::Vec3, radius::AbstractFloat, r::Ray)
+	oc = r.origin - center
+	a = r.dir ⋅ r.dir
+	b = 2oc ⋅ r.dir
+	c = (oc ⋅ oc) - radius*radius
+	discriminant = b*b - 4a*c
+	if discriminant < 0
+		return -1
+	else
+		return (-b - sqrt(discriminant)) / 2a
+	end
+end
+
+# ╔═╡ 359832af-7598-4c45-8033-c28cb0d86772
+function sphere_scene2(r::Ray)
+	sphere_center = Vec3(0,0,-1)
+	t = hit_sphere2(sphere_center, 0.5, r) # sphere of radius 0.5 centered at z=-1
+	if t > 0
+		n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
+		return 0.5n⃗ + Vec3(0.5,0.5,0.5) # remap normal to rgb
+	else
+		sky_color(r)
+	end
+end
+
+# ╔═╡ ed6ab8be-587c-4cb6-8172-618c74d3f9cc
+main(200,100,sphere_scene2)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -938,5 +970,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═c00e2004-2002-4dd2-98ed-f898ef2c14f1
 # ╠═b7399fb8-6205-41ea-9c70-eb62daedcefb
 # ╠═1d04159d-87bd-4cf8-a73c-817f20ca1026
+# ╠═fed81f09-e4a0-433f-99e8-261096114b7b
+# ╠═24e8740a-8e44-4206-b2b6-c4a55002dad8
+# ╠═359832af-7598-4c45-8033-c28cb0d86772
+# ╠═ed6ab8be-587c-4cb6-8172-618c74d3f9cc
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
