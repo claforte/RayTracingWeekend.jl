@@ -7,8 +7,21 @@ using InteractiveUtils
 # ╔═╡ b0487e05-203b-4176-97ef-edccdc1c2263
 using Images
 
+# ╔═╡ 3dceca5d-7d1e-425b-9516-24e0a24adaff
+using LinearAlgebra
+
+# ╔═╡ 3eb50f44-9091-45e8-a7e1-92d25b4b2090
+begin
+	using StaticArrays
+	Option{T} = Union{Missing, T}
+	Vec3 = SVector{3, Float32}
+end
+
 # ╔═╡ 611d5eae-4b09-11ec-27bf-ef4a1ecdcc41
 md"Adapted from http://www.realtimerendering.com/raytracing/Ray%20Tracing%20in%20a%20Weekend.pdf and  https://github.com/cshenton/RayTracing.jl"
+
+# ╔═╡ 97bb4432-ed41-423b-b4d9-bafc519de641
+md"# Chapter 1 - Manipulating images"
 
 # ╔═╡ 84d29423-cf11-41c3-af4d-c5f63b1ef23e
 img = rand(4, 3)
@@ -16,16 +29,16 @@ img = rand(4, 3)
 # ╔═╡ 7d26fef0-9a06-479a-ae08-e9d04e455767
 img_rgb = rand(RGB{Float32}, 4, 4)
 
+# ╔═╡ f29ad2c0-c3ff-484d-8fdd-dff34d2bb863
+ex1 = [RGB{Float32}(1,0,0) RGB{Float32}(0,1,0) RGB{Float32}(0,0,1);
+       RGB{Float32}(1,1,0) RGB{Float32}(1,1,1) RGB{Float32}(0,0,0)]
+
 # ╔═╡ 2192e695-4378-4b47-8ce0-353636cd2cd1
 begin
 	ex2 = zeros(RGB{Float32}, 2, 3)
 	ex2[1,1] = RGB{Float32}(1,0,0)
 	ex2
 end
-
-# ╔═╡ f29ad2c0-c3ff-484d-8fdd-dff34d2bb863
-ex1 = [RGB{Float32}(1,0,0) RGB{Float32}(0,1,0) RGB{Float32}(0,0,1);
-       RGB{Float32}(1,1,0) RGB{Float32}(1,1,1) RGB{Float32}(0,0,0)]
 
 # ╔═╡ 538d1aa5-07f9-4fca-8410-ef63b8a6857b
 # TODO: save as image, e.g. PNG
@@ -53,15 +66,95 @@ md"""Unlike the C++ implementation:
 - The C++ code used a Y-up coordinate system, so I used (ny-i) instead of i for the row number."""
 
 # ╔═╡ 961fd749-d439-4dfa-ae21-b1659dc54511
+md"# Chapter 2: Linear Algebra"
+
+# ╔═╡ 7249557b-043c-4994-bec7-615f137f98e3
+md"""See https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/
+
+Use these convenient unicode characters:
+- \times: ×
+- \cdot: ⋅
+"""
+
+# ╔═╡ f8007c75-9487-414a-9592-138a696c2957
+# Dot product (\cdot)
+[1; 1] ⋅ [2; 3]
+
+# ╔═╡ 668030c8-24a7-4aa6-b858-cedf8ac5f988
+# Cross product (\times)
+[0;1;0] × [0;0;1]
+
+# ╔═╡ 78f209df-d176-4711-80fc-a8054771f105
+t_col = Vec3(1.0, 0.5, 0.0) # test color
+
+# ╔═╡ 252fed01-c291-475a-a6a8-09ff20bdf8a7
+function color(v::Vec3) RGB{Float32}(v[1], v[2], v[3]) end
+
+# ╔═╡ cfbcb883-d12e-4ad3-a084-064749bddcdb
+color(t_col)
+
+# ╔═╡ 53832af1-a9be-4e02-8b71-a70dae63c233
+struct Ray
+	origin::Vec3
+	dir::Vec3 # direction
+end
+
+# ╔═╡ 81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
+function point(r::Ray, t::Float32)::Vec3 # point at parameter t
+	r.origin .+ t .* r.dir
+end
+
+# ╔═╡ 678214c5-de81-489f-b002-c343d48071c9
+md"# Chapter 3: Rays, simple camera, and background"
+
+# ╔═╡ cbb6418c-79e9-4359-80a6-40a8fa40679e
+function sky_color(ray::Ray)
+	unit_dir = normalize(ray.dir) # unit direction
+	t = Float32(0.5*unit_dir[2] + 1.0)
+	(1-t)*Vec3(1,1,1) + t*Vec3(0.5, 0.7, 1.0)
+end
+
+# ╔═╡ 64ef0313-2d2b-49d5-a1a1-3b04426a82f8
+begin
+	color(sky_color(Ray(Vec3(0,0,0), Vec3(0,-2,0))))
+end
+
+# ╔═╡ 971777a6-f269-4344-8dba-7a55118396e5
+function main2(nx::Int, ny::Int)
+	lower_left_corner = Vec3(-2, -1, -1)
+	horizontal = Vec3(4, 0, 0)
+	vertical = Vec3(0, 2, 0)
+	origin = Vec3(0, 0, 0)
+	
+	img = zeros(RGB{Float32}, ny, nx)
+	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
+		u = j/nx
+		v = (ny-i)/ny # Y-up!
+		ray = Ray(origin, lower_left_corner + u*horizontal + v*vertical)
+		#r = x/nx
+		#g = y/ny
+		#b = 0.2
+		img[i,j] = color(sky_color(ray))
+	end
+	img
+end
+
+# ╔═╡ 655ffa6c-f1e9-4149-8f1d-51145c5a51e4
+main2(200,100)
+
+# ╔═╡ 9075f8ed-f319-486d-94b2-486806aba3fd
 
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 Images = "~0.24.1"
+StaticArrays = "~1.2.13"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -790,14 +883,31 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╔═╡ Cell order:
 # ╠═611d5eae-4b09-11ec-27bf-ef4a1ecdcc41
 # ╠═b0487e05-203b-4176-97ef-edccdc1c2263
+# ╠═97bb4432-ed41-423b-b4d9-bafc519de641
 # ╠═84d29423-cf11-41c3-af4d-c5f63b1ef23e
 # ╠═7d26fef0-9a06-479a-ae08-e9d04e455767
-# ╠═2192e695-4378-4b47-8ce0-353636cd2cd1
 # ╠═f29ad2c0-c3ff-484d-8fdd-dff34d2bb863
+# ╠═2192e695-4378-4b47-8ce0-353636cd2cd1
 # ╠═538d1aa5-07f9-4fca-8410-ef63b8a6857b
 # ╠═8aeb7373-6bb0-4544-8655-fa941561688c
 # ╠═154d736b-8fdc-44af-ae2a-9e5ba6d2c92e
-# ╠═216922d8-613a-4ac1-9559-40878e6587e2
-# ╠═961fd749-d439-4dfa-ae21-b1659dc54511
+# ╟─216922d8-613a-4ac1-9559-40878e6587e2
+# ╟─961fd749-d439-4dfa-ae21-b1659dc54511
+# ╟─7249557b-043c-4994-bec7-615f137f98e3
+# ╠═3dceca5d-7d1e-425b-9516-24e0a24adaff
+# ╠═f8007c75-9487-414a-9592-138a696c2957
+# ╠═668030c8-24a7-4aa6-b858-cedf8ac5f988
+# ╠═3eb50f44-9091-45e8-a7e1-92d25b4b2090
+# ╠═78f209df-d176-4711-80fc-a8054771f105
+# ╠═252fed01-c291-475a-a6a8-09ff20bdf8a7
+# ╠═cfbcb883-d12e-4ad3-a084-064749bddcdb
+# ╠═53832af1-a9be-4e02-8b71-a70dae63c233
+# ╠═81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
+# ╟─678214c5-de81-489f-b002-c343d48071c9
+# ╠═cbb6418c-79e9-4359-80a6-40a8fa40679e
+# ╠═64ef0313-2d2b-49d5-a1a1-3b04426a82f8
+# ╠═971777a6-f269-4344-8dba-7a55118396e5
+# ╠═655ffa6c-f1e9-4149-8f1d-51145c5a51e4
+# ╠═9075f8ed-f319-486d-94b2-486806aba3fd
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
