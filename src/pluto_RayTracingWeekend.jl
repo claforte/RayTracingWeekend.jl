@@ -14,7 +14,18 @@ md"Adapted from http://www.realtimerendering.com/raytracing/Ray%20Tracing%20in%2
 img = rand(4, 3)
 
 # ╔═╡ 7d26fef0-9a06-479a-ae08-e9d04e455767
-img_rgb = rand(RGB, 4, 4)
+img_rgb = rand(RGB{Float32}, 4, 4)
+
+# ╔═╡ 2192e695-4378-4b47-8ce0-353636cd2cd1
+begin
+	ex2 = zeros(RGB{Float32}, 2, 3)
+	ex2[1,1] = RGB{Float32}(1,0,0)
+	ex2
+end
+
+# ╔═╡ f29ad2c0-c3ff-484d-8fdd-dff34d2bb863
+ex1 = [RGB{Float32}(1,0,0) RGB{Float32}(0,1,0) RGB{Float32}(0,0,1);
+       RGB{Float32}(1,1,0) RGB{Float32}(1,1,1) RGB{Float32}(0,0,0)]
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -753,5 +764,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═b0487e05-203b-4176-97ef-edccdc1c2263
 # ╠═84d29423-cf11-41c3-af4d-c5f63b1ef23e
 # ╠═7d26fef0-9a06-479a-ae08-e9d04e455767
+# ╠═2192e695-4378-4b47-8ce0-353636cd2cd1
+# ╠═f29ad2c0-c3ff-484d-8fdd-dff34d2bb863
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
