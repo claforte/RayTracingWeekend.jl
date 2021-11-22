@@ -120,7 +120,11 @@ begin
 end
 
 # ╔═╡ 971777a6-f269-4344-8dba-7a55118396e5
-function main2(nx::Int, ny::Int)
+# """
+# 	Args:
+# 		scene: a function that takes a ray, returns the color of any object it hit
+# """
+function main(nx::Int, ny::Int, scene)
 	lower_left_corner = Vec3(-2, -1, -1)
 	horizontal = Vec3(4, 0, 0)
 	vertical = Vec3(0, 2, 0)
@@ -134,16 +138,38 @@ function main2(nx::Int, ny::Int)
 		#r = x/nx
 		#g = y/ny
 		#b = 0.2
-		img[i,j] = color(sky_color(ray))
+		img[i,j] = color(scene(ray))
 	end
 	img
 end
 
 # ╔═╡ 655ffa6c-f1e9-4149-8f1d-51145c5a51e4
-main2(200,100)
+main(200,100, sky_color)
 
 # ╔═╡ 9075f8ed-f319-486d-94b2-486806aba3fd
+md"# Chapter 4: Add a sphere"
 
+# ╔═╡ c00e2004-2002-4dd2-98ed-f898ef2c14f1
+function hit_sphere(center::Vec3, radius::AbstractFloat, r::Ray)
+	oc = r.origin - center
+	a = r.dir ⋅ r.dir
+	b = 2oc ⋅ r.dir
+	c = (oc ⋅ oc) - radius*radius
+	discriminant = b*b - 4a*c
+	discriminant > 0
+end
+
+# ╔═╡ b7399fb8-6205-41ea-9c70-eb62daedcefb
+function sphere_scene(r::Ray)
+	if hit_sphere(Vec3(0,0,-1), 0.5, r) # sphere of radius 0.5 centered at z=-1
+		return Vec3(1,0,0) # red
+	else
+		sky_color(r)
+	end
+end
+
+# ╔═╡ 1d04159d-87bd-4cf8-a73c-817f20ca1026
+main(200,100,sphere_scene)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -908,6 +934,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═64ef0313-2d2b-49d5-a1a1-3b04426a82f8
 # ╠═971777a6-f269-4344-8dba-7a55118396e5
 # ╠═655ffa6c-f1e9-4149-8f1d-51145c5a51e4
-# ╠═9075f8ed-f319-486d-94b2-486806aba3fd
+# ╟─9075f8ed-f319-486d-94b2-486806aba3fd
+# ╠═c00e2004-2002-4dd2-98ed-f898ef2c14f1
+# ╠═b7399fb8-6205-41ea-9c70-eb62daedcefb
+# ╠═1d04159d-87bd-4cf8-a73c-817f20ca1026
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
