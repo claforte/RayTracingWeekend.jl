@@ -203,6 +203,125 @@ end
 # ╔═╡ ed6ab8be-587c-4cb6-8172-618c74d3f9cc
 main(200,100,sphere_scene2)
 
+# ╔═╡ 3b570d37-f407-41d8-b8a0-a0af4d85b14d
+begin
+	abstract type Hitable end
+	abstract type Material end
+	struct HitRecord
+	    t::Float64
+	    p::Vec3
+	    n⃗::Vec3 # surface normal vector
+	    #mat::Material
+	end
+end
+
+# ╔═╡ 138bb5b6-0f45-4f13-8339-5110eb7cd1ff
+struct Sphere <: Hitable
+	center::Vec3
+	radius::Float64
+	#mat::Material
+end
+
+# ╔═╡ 78efebc5-53fd-417d-bd9e-667fd504e3fd
+function hit(s::Sphere, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
+    oc = r.origin - s.center
+    a = r.dir ⋅ r.dir
+    b = oc ⋅ r.dir
+    c = oc⋅oc - s.radius^2
+    discriminant = b^2 - a*c
+    if discriminant > 0
+        temp = (-b - √discriminant) / a
+        if tmin < temp < tmax
+            t = temp
+            p = point(r, t)
+            n⃗ = (p - s.center) / s.radius
+            return HitRecord(t, p, n⃗) # TODO: add s.mat 
+        end
+        temp = (-b + √discriminant) / a
+        if tmin < temp < tmax
+            t = temp
+            p = point(r, t)
+            n⃗ = (p - s.center) / s.radius
+            return HitRecord(t, p, n⃗)  # TODO: add s.mat
+        end
+    end
+    return missing
+end
+
+# ╔═╡ 05e57afd-6eb9-42c5-9666-7be3771fa6b8
+struct HitableList <: Hitable
+    list::Vector{Hitable}
+end
+
+# ╔═╡ 08e18ae5-9927-485e-9644-552f03e06f27
+function hit(h::HitableList, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
+    closest = tmax # closest t so far
+    rec = missing
+    for el in h.list
+        temprec = hit(el, r, tmin, closest)
+        if !ismissing(temprec)
+            rec = temprec
+            closest = rec.t
+        end
+    end
+    rec
+end
+
+# ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
+function color_for_ray(r::Ray, world::HitableList, #depth::Int
+	)::Vec3 # compute color for a ray
+    rec = hit(world, r, 0.0, typemax(Float64))
+    if !ismissing(rec)
+		0.5rec.n⃗ + Vec3(0.5,0.5,0.5) 
+        # s = scatter(rec.mat, r, rec)
+        # if s.reflect && depth < 20
+        #     return s.attenuation .* color(s.ray, world, depth+1)
+        # else
+        #     return Vec3(0.0, 0.0, 0.0)
+        # end
+    else
+        sky_color(r)
+    end
+end
+
+# ╔═╡ 70530f8e-1b29-4588-927f-d38d5d12d5c9
+function scene_two_spheres()::HitableList
+	spheres = Sphere[]
+	push!(spheres, Sphere(Vec3(0,0,-1), 0.5)) # small sphere
+	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100)) # huge sphere (planet?)
+	HitableList(spheres)
+end
+
+# ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
+# """
+# 	Args:
+# 		scene: a HitableList, e.g. a list of spheres
+# """
+function render(scene::HitableList, nx::Int, ny::Int)
+	lower_left_corner = Vec3(-2, -1, -1)
+	horizontal = Vec3(4, 0, 0)
+	vertical = Vec3(0, 2, 0)
+	origin = Vec3(0, 0, 0)
+	
+	img = zeros(RGB, ny, nx)
+	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
+		u = j/nx
+		v = (ny-i)/ny # Y-up!
+		ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
+		img[i,j] = color(color_for_ray(ray, scene))
+	end
+	img
+end
+
+# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
+render(scene_two_spheres(), 200, 100)
+
+# ╔═╡ 2d060fa8-5971-48dd-b80f-6c328f4189db
+md"# Chapter 5: Antialiasing"
+
+# ╔═╡ 1710b21e-fdb5-48c9-9a4b-b411b5ae314c
+
+
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
@@ -970,9 +1089,20 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═c00e2004-2002-4dd2-98ed-f898ef2c14f1
 # ╠═b7399fb8-6205-41ea-9c70-eb62daedcefb
 # ╠═1d04159d-87bd-4cf8-a73c-817f20ca1026
-# ╠═fed81f09-e4a0-433f-99e8-261096114b7b
+# ╟─fed81f09-e4a0-433f-99e8-261096114b7b
 # ╠═24e8740a-8e44-4206-b2b6-c4a55002dad8
 # ╠═359832af-7598-4c45-8033-c28cb0d86772
 # ╠═ed6ab8be-587c-4cb6-8172-618c74d3f9cc
+# ╠═3b570d37-f407-41d8-b8a0-a0af4d85b14d
+# ╠═138bb5b6-0f45-4f13-8339-5110eb7cd1ff
+# ╠═78efebc5-53fd-417d-bd9e-667fd504e3fd
+# ╠═05e57afd-6eb9-42c5-9666-7be3771fa6b8
+# ╠═08e18ae5-9927-485e-9644-552f03e06f27
+# ╠═f72214f9-03c4-4ba3-bb84-069256446b31
+# ╠═70530f8e-1b29-4588-927f-d38d5d12d5c9
+# ╠═64104df6-4b79-4329-bfed-14619aa73e3c
+# ╠═9fd417cc-afa9-4f12-9c29-748f0522554c
+# ╟─2d060fa8-5971-48dd-b80f-6c328f4189db
+# ╠═1710b21e-fdb5-48c9-9a4b-b411b5ae314c
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
