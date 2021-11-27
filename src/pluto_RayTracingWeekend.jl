@@ -320,6 +320,7 @@ struct HittableList <: Hittable
 end
 
 # ╔═╡ 08e18ae5-9927-485e-9644-552f03e06f27
+"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
 function hit(h::HittableList, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
     closest = tmax # closest t so far
     rec = missing
