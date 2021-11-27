@@ -431,8 +431,10 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 			u = j/image_width
 			v = (image_height-i)/image_height # i is Y-down, v is Y-up!
 			if s != 1 # 1st sample is always centered, for 1-sample/pixel
-				u += rand() / image_width
-				v += rand() / image_height
+				# claforte: I think the C++ version had a bug, the rand offset was
+				# between [0,1] instead of [-0.5, 0.5].
+				u += (rand()-0.5) / image_width
+				v += (rand()-0.5) / image_height
 			end
 			ray = get_ray(cam, u, v)
 			accum_color += ray_color(ray, scene)
