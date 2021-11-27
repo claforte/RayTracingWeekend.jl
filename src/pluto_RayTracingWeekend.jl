@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.17.1
+# v0.17.2
 
 using Markdown
 using InteractiveUtils
@@ -15,6 +15,20 @@ begin
 	using StaticArrays
 	Option{T} = Union{Missing, T}
 	Vec3 = SVector{3}
+	
+	import Base.getproperty
+	function Base.getproperty(vec::Vec3, sym::Symbol)
+		#  TODO: use a dictionary that maps symbols to indices, e.g. Dict(:x->1)
+		if sym in [:x, :r]
+			return vec[1]
+		elseif sym in [:y, :g]
+			return vec[2]
+		elseif sym in [:z, :b]
+			return vec[3]
+		else
+			return getfield(vec, sym)
+		end
+	end
 end
 
 # ╔═╡ 611d5eae-4b09-11ec-27bf-ef4a1ecdcc41
@@ -77,7 +91,7 @@ Use these convenient unicode characters:
 """
 
 # ╔═╡ f8007c75-9487-414a-9592-138a696c2957
-# Dot product (\cdot)
+# Dot product (\cdot) is defined by LinearAlgebra...
 [1; 1] ⋅ [2; 3]
 
 # ╔═╡ 668030c8-24a7-4aa6-b858-cedf8ac5f988
@@ -87,8 +101,15 @@ Use these convenient unicode characters:
 # ╔═╡ 78f209df-d176-4711-80fc-a8054771f105
 t_col = Vec3(1.0, 0.5, 0.0) # test color
 
+# ╔═╡ e88de775-6904-4182-8209-06db22758470
+# doesn't work yet... "type SArray has no field x"
+t_col.r
+
+# ╔═╡ 3e6fd5c0-6d4a-44ef-a7b2-106b52fc6550
+t_col.y
+
 # ╔═╡ 252fed01-c291-475a-a6a8-09ff20bdf8a7
-function color(v::Vec3) RGB(v[1], v[2], v[3]) end
+function color(v::Vec3) RGB(v.r, v.g, v.b) end
 
 # ╔═╡ cfbcb883-d12e-4ad3-a084-064749bddcdb
 color(t_col)
@@ -1076,6 +1097,8 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═668030c8-24a7-4aa6-b858-cedf8ac5f988
 # ╠═3eb50f44-9091-45e8-a7e1-92d25b4b2090
 # ╠═78f209df-d176-4711-80fc-a8054771f105
+# ╠═e88de775-6904-4182-8209-06db22758470
+# ╠═3e6fd5c0-6d4a-44ef-a7b2-106b52fc6550
 # ╠═252fed01-c291-475a-a6a8-09ff20bdf8a7
 # ╠═cfbcb883-d12e-4ad3-a084-064749bddcdb
 # ╠═53832af1-a9be-4e02-8b71-a70dae63c233
