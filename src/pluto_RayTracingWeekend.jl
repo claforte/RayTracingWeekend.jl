@@ -352,6 +352,9 @@ function ray_color(r::Ray, world::HittableList, #depth::Int
     end
 end
 
+# ╔═╡ 851c002c-dc23-4999-b28c-a716c5d2d42c
+md"# Scenes"
+
 # ╔═╡ 70530f8e-1b29-4588-927f-d38d5d12d5c9
 function scene_two_spheres()::HittableList
 	spheres = Sphere[]
@@ -360,17 +363,57 @@ function scene_two_spheres()::HittableList
 	HittableList(spheres)
 end
 
-# ╔═╡ e883a11d-b515-4735-b18f-13c375f2af68
-floor(1.0)
+# ╔═╡ 282a4912-7a6e-44ae-90eb-f2f7c8f3d0f4
+md"""# Camera
+
+Adapted from C++'s section 7.2
+"""
+
+# ╔═╡ a0e5a1f3-244f-427b-a335-7e233af1d9d8
+mutable struct Camera
+	origin::Vec3
+	lower_left_corner::Vec3
+	horizontal::Vec3
+	vertical::Vec3
+end
+
+# ╔═╡ 5d00f26b-35f2-4071-8e04-227ffc25f184
+function default_camera(aspect_ratio=16.0/9.0, viewport_height=2.0, focal_length=1.0)
+	viewport_width = aspect_ratio * viewport_height
+	origin = Vec3(0,0,0)
+	horizontal = Vec3(viewport_width, 0, 0)
+	vertical = Vec3(0, viewport_height, 0)
+	lower_left_corner = origin - horizontal/2 - vertical/2 - Vec3(0,0,focal_length)
+	Camera(origin, lower_left_corner, horizontal, vertical)
+end
+
+# ╔═╡ c1aef1be-79d4-4417-be36-ae8416465986
+default_camera()
+
+# ╔═╡ 94081092-afc6-4359-bd2c-15e8407bf70e
+get_ray(c::Camera, u::Float64, v::Float64) =
+	Ray(c.origin, c.lower_left_corner + u*c.horizontal + v*c.vertical - c.origin)
+
+# ╔═╡ 813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
+get_ray(default_camera(), 0.0, 0.0)
+
+# ╔═╡ a4493f3a-cb9f-404e-830d-a7d007df5baf
+clamp(3.5, 0, 1)
+
+# ╔═╡ 891ce2c8-f8b2-472b-a8d9-389dafddcf22
+md"# Render
+
+(equivalent to final `main`)"
 
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
 """
 	Args:
 		scene: a HittableList, e.g. a list of spheres
+		n_samples: number of samples per pixel, eq. to C++ `samples_per_pixel`
 
 	Equivalent to C++'s `main` function.
 """
-function render(scene::HittableList, nx::Int, ny::Int)
+function render(scene::HittableList, nx::Int, ny::Int, n_samples::Int)
 	# Image
 	aspect_ratio = 16.0/9.0
 	image_width = 400
@@ -393,22 +436,31 @@ function render(scene::HittableList, nx::Int, ny::Int)
 	# 2. 1-based, so no need to subtract 1 from image_width, etc.
 	# 3. The array is Y-down, but `v` is Y-up 
 	for i in 1:image_height, j in 1:image_width
-		u = j/image_width
-		v = (image_height-i)/image_height # i is Y-down, v is Y-up!
-		ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
-		img[i,j] = color(ray_color(ray, scene))
+		accum_color = Vec3(0,0,0)
+		for s in 1:n_samples
+			u = j/image_width
+			v = (image_height-i)/image_height # i is Y-down, v is Y-up!
+			if s != 1 # 1st sample is always centered, for 1-sample/pixel
+				u += rand() / image_width
+				v += rand() / image_height
+			end
+			ray = Ray(origin, normalize(lower_left_corner + u*horizontal +
+									    v*vertical))
+			accum_color += ray_color(ray, scene)
+		end
+		img[i,j] = color(accum_color / n_samples)
 	end
 	img
 end
 
+# ╔═╡ 97d9a286-2e70-4dd4-8407-62b3a89da16b
+md"2 spheres (1 sample per pixel, i.e. aliased):"
+
 # ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-render(scene_two_spheres(), 200, 100)
+render(scene_two_spheres(), 200, 100, 1)
 
-# ╔═╡ 2d060fa8-5971-48dd-b80f-6c328f4189db
-md"# Chapter 7: Antialiasing"
-
-# ╔═╡ 1710b21e-fdb5-48c9-9a4b-b411b5ae314c
-
+# ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
+render(scene_two_spheres(), 200, 100, 4) # 4 samples takes 7.3s
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1248,11 +1300,19 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═05e57afd-6eb9-42c5-9666-7be3771fa6b8
 # ╠═08e18ae5-9927-485e-9644-552f03e06f27
 # ╠═f72214f9-03c4-4ba3-bb84-069256446b31
+# ╟─851c002c-dc23-4999-b28c-a716c5d2d42c
 # ╠═70530f8e-1b29-4588-927f-d38d5d12d5c9
-# ╠═e883a11d-b515-4735-b18f-13c375f2af68
+# ╟─282a4912-7a6e-44ae-90eb-f2f7c8f3d0f4
+# ╠═a0e5a1f3-244f-427b-a335-7e233af1d9d8
+# ╠═5d00f26b-35f2-4071-8e04-227ffc25f184
+# ╠═c1aef1be-79d4-4417-be36-ae8416465986
+# ╠═94081092-afc6-4359-bd2c-15e8407bf70e
+# ╠═813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
+# ╠═a4493f3a-cb9f-404e-830d-a7d007df5baf
+# ╟─891ce2c8-f8b2-472b-a8d9-389dafddcf22
 # ╠═64104df6-4b79-4329-bfed-14619aa73e3c
+# ╟─97d9a286-2e70-4dd4-8407-62b3a89da16b
 # ╠═9fd417cc-afa9-4f12-9c29-748f0522554c
-# ╟─2d060fa8-5971-48dd-b80f-6c328f4189db
-# ╠═1710b21e-fdb5-48c9-9a4b-b411b5ae314c
+# ╠═4dd59aa7-37a7-426b-8573-a0fee26343df
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
