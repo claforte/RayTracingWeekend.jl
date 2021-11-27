@@ -162,10 +162,11 @@ begin
 end
 
 # ╔═╡ 971777a6-f269-4344-8dba-7a55118396e5
-# """
-# 	Args:
-# 		scene: a function that takes a ray, returns the color of any object it hit
-# """
+""" Temporary function to shoot rays through each pixel. Later replaced by `render`
+	
+	Args:
+		scene: a function that takes a ray, returns the color of any object it hit
+"""
 function main(nx::Int, ny::Int, scene)
 	lower_left_corner = Vec3(-2, -1, -1)
 	horizontal = Vec3(4, 0, 0)
@@ -245,20 +246,27 @@ end
 # ╔═╡ ed6ab8be-587c-4cb6-8172-618c74d3f9cc
 main(200,100,sphere_scene2)
 
+# ╔═╡ a65c68c9-e489-465a-9687-93ae9da14a5e
+"An object that can be hit by Ray"
+abstract type Hittable end
+
+# ╔═╡ 2c4b4453-1a46-4889-9a14-16b18cc8c240
+"Visual properties (e.g. texture) of an object"
+abstract type Material end
+
 # ╔═╡ 3b570d37-f407-41d8-b8a0-a0af4d85b14d
-begin
-	abstract type Hittable end
-	abstract type Material end
-	mutable struct HitRecord
-	    t::Float64 # vector from the ray's origin to the intersection with a surface
-	    p::Vec3 # point of the intersection between an object's surface and a ray
-	    n⃗::Vec3 # surface's outward normal vector, points towards outside of object?
-		
-		# If true, our ray hit from outside to the front of the surface. 
-		# If false, the ray hit from within.
-		front_face::Bool
-	    #mat::Material
-	end
+"Record a hit between a ray and an object's surface"
+mutable struct HitRecord
+	# claforte: Not sure if this needs to be mutable... might impact performance!
+
+	t::Float64 # vector from the ray's origin to the intersection with a surface
+	p::Vec3 # point of the intersection between an object's surface and a ray
+	n⃗::Vec3 # surface's outward normal vector, points towards outside of object?
+	
+	# If true, our ray hit from outside to the front of the surface. 
+	# If false, the ray hit from within.
+	front_face::Bool
+	#mat::Material
 end
 
 # ╔═╡ 138bb5b6-0f45-4f13-8339-5110eb7cd1ff
@@ -274,13 +282,11 @@ md"""The geometry defines an `outside normal`. A HitRecord stores the `local nor
 """
 
 # ╔═╡ 4a396b3f-f920-4ec2-91f6-7d61fe2b9699
-begin
-	# equivalent to hit_record.set_face_normal()
-	function ray_to_HitRecord(t, p, outward_n⃗, r_dir::Vec3)
-		front_face = r_dir ⋅ outward_n⃗ < 0
-		n⃗ = front_face ? outward_n⃗ : -outward_n⃗
-		rec = HitRecord(t,p,n⃗,front_face)
-	end
+"""Equivalent to `hit_record.set_face_normal()`"""
+function ray_to_HitRecord(t, p, outward_n⃗, r_dir::Vec3)
+	front_face = r_dir ⋅ outward_n⃗ < 0
+	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
+	rec = HitRecord(t,p,n⃗,front_face)
 end
 
 # ╔═╡ 78efebc5-53fd-417d-bd9e-667fd504e3fd
@@ -353,10 +359,10 @@ function scene_two_spheres()::HittableList
 end
 
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
-# """
-# 	Args:
-# 		scene: a HittableList, e.g. a list of spheres
-# """
+"""
+	Args:
+		scene: a HittableList, e.g. a list of spheres
+"""
 function render(scene::HittableList, nx::Int, ny::Int)
 	lower_left_corner = Vec3(-2, -1, -1)
 	horizontal = Vec3(4, 0, 0)
@@ -1210,6 +1216,8 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═24e8740a-8e44-4206-b2b6-c4a55002dad8
 # ╠═359832af-7598-4c45-8033-c28cb0d86772
 # ╠═ed6ab8be-587c-4cb6-8172-618c74d3f9cc
+# ╠═a65c68c9-e489-465a-9687-93ae9da14a5e
+# ╠═2c4b4453-1a46-4889-9a14-16b18cc8c240
 # ╠═3b570d37-f407-41d8-b8a0-a0af4d85b14d
 # ╠═138bb5b6-0f45-4f13-8339-5110eb7cd1ff
 # ╟─6b36d245-bf01-45a7-b119-8315226dd4a3
