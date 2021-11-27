@@ -392,7 +392,7 @@ default_camera()
 
 # ╔═╡ 94081092-afc6-4359-bd2c-15e8407bf70e
 get_ray(c::Camera, u::Float64, v::Float64) =
-	Ray(c.origin, c.lower_left_corner + u*c.horizontal + v*c.vertical - c.origin)
+	Ray(c.origin, normalize(c.lower_left_corner + u*c.horizontal + v*c.vertical - c.origin))
 
 # ╔═╡ 813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
 get_ray(default_camera(), 0.0, 0.0)
@@ -413,10 +413,10 @@ md"# Render
 
 	Equivalent to C++'s `main` function.
 """
-function render(scene::HittableList, nx::Int, ny::Int, n_samples::Int)
+function render(scene::HittableList, camera::Camera, image_width=400,
+				n_samples=1)
 	# Image
 	aspect_ratio = 16.0/9.0
-	image_width = 400
 	image_height = convert(Int64, image_width / aspect_ratio)
 
 	# Camera
@@ -444,8 +444,7 @@ function render(scene::HittableList, nx::Int, ny::Int, n_samples::Int)
 				u += rand() / image_width
 				v += rand() / image_height
 			end
-			ray = Ray(origin, normalize(lower_left_corner + u*horizontal +
-									    v*vertical))
+			ray = get_ray(camera, u, v)
 			accum_color += ray_color(ray, scene)
 		end
 		img[i,j] = color(accum_color / n_samples)
@@ -457,10 +456,10 @@ end
 md"2 spheres (1 sample per pixel, i.e. aliased):"
 
 # ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-render(scene_two_spheres(), 200, 100, 1)
+render(scene_two_spheres(), default_camera(), 320)
 
 # ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
-render(scene_two_spheres(), 200, 100, 4) # 4 samples takes 7.3s
+render(scene_two_spheres(), default_camera(), 320, 4) # width of 320, 4 samples: 5.4s
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
