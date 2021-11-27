@@ -247,7 +247,7 @@ main(200,100,sphere_scene2)
 
 # ╔═╡ 3b570d37-f407-41d8-b8a0-a0af4d85b14d
 begin
-	abstract type Hitable end
+	abstract type Hittable end
 	abstract type Material end
 	mutable struct HitRecord
 	    t::Float64 # vector from the ray's origin to the intersection with a surface
@@ -262,7 +262,7 @@ begin
 end
 
 # ╔═╡ 138bb5b6-0f45-4f13-8339-5110eb7cd1ff
-struct Sphere <: Hitable
+struct Sphere <: Hittable
 	center::Vec3
 	radius::Float64
 	#mat::Material
@@ -309,12 +309,12 @@ function hit(s::Sphere, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
 end
 
 # ╔═╡ 05e57afd-6eb9-42c5-9666-7be3771fa6b8
-struct HitableList <: Hitable
-    list::Vector{Hitable}
+struct HittableList <: Hittable
+    list::Vector{Hittable}
 end
 
 # ╔═╡ 08e18ae5-9927-485e-9644-552f03e06f27
-function hit(h::HitableList, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
+function hit(h::HittableList, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
     closest = tmax # closest t so far
     rec = missing
     for el in h.list
@@ -328,7 +328,7 @@ function hit(h::HitableList, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRe
 end
 
 # ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
-function color_for_ray(r::Ray, world::HitableList, #depth::Int
+function color_for_ray(r::Ray, world::HittableList, #depth::Int
 	)::Vec3 # compute color for a ray
     rec = hit(world, r, 0.0, typemax(Float64))
     if !ismissing(rec)
@@ -345,19 +345,19 @@ function color_for_ray(r::Ray, world::HitableList, #depth::Int
 end
 
 # ╔═╡ 70530f8e-1b29-4588-927f-d38d5d12d5c9
-function scene_two_spheres()::HitableList
+function scene_two_spheres()::HittableList
 	spheres = Sphere[]
 	push!(spheres, Sphere(Vec3(0,0,-1), 0.5)) # small sphere
 	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100)) # huge sphere (planet?)
-	HitableList(spheres)
+	HittableList(spheres)
 end
 
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
 # """
 # 	Args:
-# 		scene: a HitableList, e.g. a list of spheres
+# 		scene: a HittableList, e.g. a list of spheres
 # """
-function render(scene::HitableList, nx::Int, ny::Int)
+function render(scene::HittableList, nx::Int, ny::Int)
 	lower_left_corner = Vec3(-2, -1, -1)
 	horizontal = Vec3(4, 0, 0)
 	vertical = Vec3(0, 2, 0)
