@@ -336,9 +336,9 @@ function hit(hittables::HittableList, r::Ray, tmin::Float64,
 end
 
 # ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
-function color_for_ray(r::Ray, world::HittableList, #depth::Int
+function ray_color(r::Ray, world::HittableList, #depth::Int
 	)::Vec3 # compute color for a ray
-    rec = hit(world, r, 0.0, typemax(Float64))
+    rec = hit(world, r, 0.0, Inf)
     if !ismissing(rec)
 		0.5rec.n⃗ + Vec3(0.5,0.5,0.5) 
         # s = scatter(rec.mat, r, rec)
@@ -360,23 +360,43 @@ function scene_two_spheres()::HittableList
 	HittableList(spheres)
 end
 
+# ╔═╡ e883a11d-b515-4735-b18f-13c375f2af68
+floor(1.0)
+
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
 """
 	Args:
 		scene: a HittableList, e.g. a list of spheres
+
+	Equivalent to C++'s `main` function.
 """
 function render(scene::HittableList, nx::Int, ny::Int)
-	lower_left_corner = Vec3(-2, -1, -1)
-	horizontal = Vec3(4, 0, 0)
-	vertical = Vec3(0, 2, 0)
-	origin = Vec3(0, 0, 0)
-	
-	img = zeros(RGB, ny, nx)
-	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
-		u = j/nx
-		v = (ny-i)/ny # Y-up!
+	# Image
+	aspect_ratio = 16.0/9.0
+	image_width = 400
+	image_height = convert(Int64, image_width / aspect_ratio)
+
+	# Camera
+	viewport_height = 2.0
+	viewport_width = aspect_ratio * viewport_height
+	focal_length = 1.0
+
+	origin = Vec3(0,0,0)
+	horizontal = Vec3(viewport_width, 0, 0)
+	vertical = Vec3(0, viewport_height, 0)
+	lower_left_corner = origin - horizontal/2 - vertical/2 - Vec3(0,0,focal_length)
+
+	# Render
+	img = zeros(RGB, image_height, image_width)
+	# Compared to C++, Julia is:
+	# 1. column-major, i.e. iterate 1 column at a time, so invert i,j compared to C++
+	# 2. 1-based, so no need to subtract 1 from image_width, etc.
+	# 3. The array is Y-down, but `v` is Y-up 
+	for i in 1:image_height, j in 1:image_width
+		u = j/image_width
+		v = (image_height-i)/image_height # i is Y-down, v is Y-up!
 		ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
-		img[i,j] = color(color_for_ray(ray, scene))
+		img[i,j] = color(ray_color(ray, scene))
 	end
 	img
 end
@@ -385,7 +405,7 @@ end
 render(scene_two_spheres(), 200, 100)
 
 # ╔═╡ 2d060fa8-5971-48dd-b80f-6c328f4189db
-md"# Chapter 5: Antialiasing"
+md"# Chapter 7: Antialiasing"
 
 # ╔═╡ 1710b21e-fdb5-48c9-9a4b-b411b5ae314c
 
@@ -1229,6 +1249,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═08e18ae5-9927-485e-9644-552f03e06f27
 # ╠═f72214f9-03c4-4ba3-bb84-069256446b31
 # ╠═70530f8e-1b29-4588-927f-d38d5d12d5c9
+# ╠═e883a11d-b515-4735-b18f-13c375f2af68
 # ╠═64104df6-4b79-4329-bfed-14619aa73e3c
 # ╠═9fd417cc-afa9-4f12-9c29-748f0522554c
 # ╟─2d060fa8-5971-48dd-b80f-6c328f4189db
