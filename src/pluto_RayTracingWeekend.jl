@@ -413,21 +413,11 @@ md"# Render
 
 	Equivalent to C++'s `main` function.
 """
-function render(scene::HittableList, camera::Camera, image_width=400,
+function render(scene::HittableList, cam::Camera, image_width=400,
 				n_samples=1)
 	# Image
 	aspect_ratio = 16.0/9.0
 	image_height = convert(Int64, image_width / aspect_ratio)
-
-	# Camera
-	viewport_height = 2.0
-	viewport_width = aspect_ratio * viewport_height
-	focal_length = 1.0
-
-	origin = Vec3(0,0,0)
-	horizontal = Vec3(viewport_width, 0, 0)
-	vertical = Vec3(0, viewport_height, 0)
-	lower_left_corner = origin - horizontal/2 - vertical/2 - Vec3(0,0,focal_length)
 
 	# Render
 	img = zeros(RGB, image_height, image_width)
@@ -444,7 +434,7 @@ function render(scene::HittableList, camera::Camera, image_width=400,
 				u += rand() / image_width
 				v += rand() / image_height
 			end
-			ray = get_ray(camera, u, v)
+			ray = get_ray(cam, u, v)
 			accum_color += ray_color(ray, scene)
 		end
 		img[i,j] = color(accum_color / n_samples)
