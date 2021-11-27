@@ -152,7 +152,7 @@ md"# Chapter 4: Rays, simple camera, and background"
 # ╔═╡ cbb6418c-79e9-4359-80a6-40a8fa40679e
 function sky_color(ray::Ray)
 	# NOTE: unlike in the C++ implementation, we normalize the ray direction.
-	t = 0.5*ray.dir[2] + 1.0
+	t = 0.5ray.dir.y + 1.0
 	(1-t)*Vec3(1,1,1) + t*Vec3(0.5, 0.7, 1.0)
 end
 
