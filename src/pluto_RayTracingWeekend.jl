@@ -141,6 +141,7 @@ struct Ray
 end
 
 # ╔═╡ 81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
+# equivalent to C++'s ray.at()
 function point(r::Ray, t::AbstractFloat)::Vec3 # point at parameter t
 	r.origin .+ t .* r.dir
 end
@@ -274,7 +275,7 @@ md"""The geometry defines an `outside normal`. A HitRecord stores the `local nor
 
 # ╔═╡ 4a396b3f-f920-4ec2-91f6-7d61fe2b9699
 begin
-	# equivalent to hit_record.set_front_face()
+	# equivalent to hit_record.set_face_normal()
 	function ray_to_HitRecord(t, p, outward_n⃗, r_dir::Vec3)
 		front_face = r_dir ⋅ outward_n⃗ < 0
 		n⃗ = front_face ? outward_n⃗ : -outward_n⃗
@@ -286,26 +287,25 @@ end
 function hit(s::Sphere, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
     oc = r.origin - s.center
     a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
-    b = oc ⋅ r.dir
+    half_b = oc ⋅ r.dir
     c = oc⋅oc - s.radius^2
-    discriminant = b^2 - a*c
-    if discriminant > 0
-        temp = (-b - √discriminant) / a
-        if tmin < temp < tmax
-            t = temp
-            p = point(r, t)
-            n⃗ = (p - s.center) / s.radius
-            return ray_to_HitRecord(t, p, n⃗, r.dir)
-        end
-        temp = (-b + √discriminant) / a
-        if tmin < temp < tmax
-            t = temp
-            p = point(r, t)
-            n⃗ = (p - s.center) / s.radius
-            return ray_to_HitRecord(t, p, n⃗, r.dir)
-        end
-    end
-    return missing
+    discriminant = half_b^2 - a*c
+	if discriminant < 0 return missing end
+	sqrtd = √discriminant
+	
+	# Find the nearest root that lies in the acceptable range
+	root = (-half_b - sqrtd) / a	
+	if root < tmin || tmax < root
+		root = (-half_b + sqrtd) / a
+		if root < tmin || tmax < root
+			return missing
+		end
+	end
+		
+	t = root
+	p = point(r, t)
+	n⃗ = (p - s.center) / s.radius
+	return ray_to_HitRecord(t, p, n⃗, r.dir)
 end
 
 # ╔═╡ 05e57afd-6eb9-42c5-9666-7be3771fa6b8
