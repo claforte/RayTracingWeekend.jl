@@ -296,6 +296,8 @@ end
 struct Scatter
 	r::Ray
 	attenuation::Color
+	
+	# claforte: TODO: rename to "absorbed?", i.e. not reflected/refracted?
 	reflected::Bool # whether the scattered ray was reflected, or fully absorbed
 	Scatter(r,a,reflected=true) = new(r,a,reflected)
 end
@@ -451,6 +453,79 @@ md"2 spheres (1 sample per pixel, i.e. aliased):"
 # ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
 #render(scene_2_spheres(), default_camera(), 96, 16)
 
+# ╔═╡ 5f1bae02-d425-4a73-8668-d6383faba79d
+md"""# Dielectrics
+
+from Section 10.2 Snell's Law:
+![Ray refraction](https://raytracing.github.io/images/fig-1.13-refraction.jpg)
+
+Refracted angle `sinθ′ = (η/η′)⋅sinθ`, where η (\eta) are the refractive indices.
+
+Split the parts of the ray into `R′=R′⊥+R′∥` (perpendicular and parallel to n⃗′)."""
+
+# ╔═╡ 776b5096-4792-46b9-b70f-50a2b4c4999b
+
+
+# ╔═╡ 9dc64353-c41c-45b4-aacd-12d5d6117c58
+function refract(dir::Vec3, n⃗::Vec3, ηᵢ_over_ηₜ::Float64)
+	cosθ = min(-dir ⋅ n⃗, 1)
+	r_out_perp = ηᵢ_over_ηₜ * (dir + cosθ*n⃗) # claforte: can't use ⟂ (\perp)... sigh
+	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗ # can't use ∥...
+	normalize(r_out_perp + r_out_parallel)
+end
+
+# ╔═╡ e1adf736-592e-4980-9318-a641a2188b8a
+@assert refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 1.0) == Vec3(0.6,-0.8,0) # unchanged
+
+# ╔═╡ bbfd4db5-3650-4f27-9777-2ff981c3d28b
+begin
+	t_refract_widerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 2.0) # wider angle
+	@assert isapprox(t_refract_widerθ, Vec3(0.87519, -0.483779, 0.0); atol=1e-3)
+end
+
+# ╔═╡ b54e631c-12ab-49c1-a63e-65b1c9a5d8b6
+begin
+	t_refract_narrowerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 0.5) # narrower angle
+	@assert isapprox(t_refract_narrowerθ, Vec3(0.3, -0.953939, 0.0); atol=1e-3)
+end
+
+# ╔═╡ f5c4e502-048c-4fcd-879f-eaeb4430c012
+mutable struct Dielectric <: Material
+	ir::Float64 # index of refraction, i.e. η
+end
+
+# ╔═╡ ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
+function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
+	attenuation = Color(1,1,1)
+	ηᵢ_over_ηₜ = rec.front_face ? (1.0/mat.ir) : mat.ir # refraction ratio
+	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0)
+	sinθ = √(1.0 - cosθ^2)
+	cannot_refract = ηᵢ_over_ηₜ * sinθ > 1.0
+	if cannot_refract
+		dir = reflect(r_in.dir, rec.n⃗)
+	else
+		dir = refract(r_in.dir, rec.n⃗, ηᵢ_over_ηₜ)
+	end
+	Scatter(Ray(rec.p, dir), attenuation) # TODO: rename reflected -> !absorbed?
+end
+
+# ╔═╡ ddf5883c-036a-4a21-908d-bb7cec731f7f
+#"From C++: Image 15: Glass sphere that sometimes refracts"
+function scene_diel_spheres()::HittableList # dielectric spheres
+	spheres = Sphere[]
+	
+	# small center sphere
+	push!(spheres, Sphere(Vec3(0,0,-1), 0.5, Lambertian(Color(0.1,0.2,0.5))))
+	
+	# ground sphere (planet?)
+	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100, Lambertian(Color(0.8,0.8,0.0))))
+	
+	# left and right Metal spheres
+	push!(spheres, Sphere(Vec3(-1,0,-1), 0.5, Dielectric(1.5))) 
+	push!(spheres, Sphere(Vec3( 1,0,-1), 0.5, Metal(Color(0.8,0.6,0.2), 0.0)))
+	HittableList(spheres)
+end
+
 # ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 md"""# Random vectors
 
@@ -600,6 +675,9 @@ render(scene_4_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
 render(scene_4_spheres(), default_camera(), 200, 32)
+
+# ╔═╡ a1564d79-3628-4121-99a9-d3674e16eb04
+render(scene_diel_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
 random_vec3_on_sphere()
@@ -1470,6 +1548,16 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═9fd417cc-afa9-4f12-9c29-748f0522554c
 # ╠═4dd59aa7-37a7-426b-8573-a0fee26343df
 # ╠═a2221922-31be-42f3-8f70-845fae385d2c
+# ╟─5f1bae02-d425-4a73-8668-d6383faba79d
+# ╠═776b5096-4792-46b9-b70f-50a2b4c4999b
+# ╠═9dc64353-c41c-45b4-aacd-12d5d6117c58
+# ╠═e1adf736-592e-4980-9318-a641a2188b8a
+# ╠═bbfd4db5-3650-4f27-9777-2ff981c3d28b
+# ╠═b54e631c-12ab-49c1-a63e-65b1c9a5d8b6
+# ╠═f5c4e502-048c-4fcd-879f-eaeb4430c012
+# ╠═ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
+# ╠═ddf5883c-036a-4a21-908d-bb7cec731f7f
+# ╠═a1564d79-3628-4121-99a9-d3674e16eb04
 # ╟─30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 # ╠═1f4a9699-5c91-4e2c-b592-1bfa86c05959
 # ╠═795fdf6f-945e-44f8-8aa1-1e33586cc095
