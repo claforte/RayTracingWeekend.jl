@@ -24,6 +24,8 @@ begin
 	using StaticArrays
 	Option{T} = Union{Missing, T}
 	Vec3 = SVector{3}
+	Point = Vec3
+	Color = Vec3
 	
 	import Base.getproperty
 	function Base.getproperty(vec::Vec3, sym::Symbol)
@@ -123,7 +125,7 @@ Use these convenient unicode characters:
 [0;1;0] × [0;0;1]
 
 # ╔═╡ 78f209df-d176-4711-80fc-a8054771f105
-t_col = Vec3(1.0, 0.5, 0.0) # test color
+t_col = Color(1.0, 0.5, 0.0) # test color
 
 # ╔═╡ e88de775-6904-4182-8209-06db22758470
 # doesn't work yet... "type SArray has no field x"
@@ -143,13 +145,13 @@ color(t_col)
 
 # ╔═╡ 53832af1-a9be-4e02-8b71-a70dae63c233
 struct Ray
-	origin::Vec3
+	origin::Point
 	dir::Vec3 # direction (unit vector)
 end
 
 # ╔═╡ 81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
 # equivalent to C++'s ray.at()
-function point(r::Ray, t::AbstractFloat)::Vec3 # point at parameter t
+function point(r::Ray, t::AbstractFloat)::Point # point at parameter t
 	r.origin .+ t .* r.dir
 end
 
@@ -160,16 +162,16 @@ md"# Chapter 4: Rays, simple camera, and background"
 function sky_color(ray::Ray)
 	# NOTE: unlike in the C++ implementation, we normalize the ray direction.
 	t = 0.5(ray.dir.y + 1.0)
-	(1-t)*Vec3(1,1,1) + t*Vec3(0.5, 0.7, 1.0)
+	(1-t)*Color(1,1,1) + t*Color(0.5, 0.7, 1.0)
 end
 
 # ╔═╡ 14be6068-6a15-4fad-ac0a-f156da71f103
 # interpolates between blue and white
-color(Vec3(0.5, 0.7, 1.0)), color(Vec3(1.0, 1.0, 1.0))
+color(Color(0.5, 0.7, 1.0)), color(Color(1.0, 1.0, 1.0))
 
 # ╔═╡ 64ef0313-2d2b-49d5-a1a1-3b04426a82f8
 begin
-	color(sky_color(Ray(Vec3(0,0,0), Vec3(0,-1,0))))
+	color(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
 end
 
 # ╔═╡ 971777a6-f269-4344-8dba-7a55118396e5
@@ -179,10 +181,10 @@ end
 		scene: a function that takes a ray, returns the color of any object it hit
 """
 function main(nx::Int, ny::Int, scene)
-	lower_left_corner = Vec3(-2, -1, -1)
+	lower_left_corner = Point(-2, -1, -1)
 	horizontal = Vec3(4, 0, 0)
 	vertical = Vec3(0, 2, 0)
-	origin = Vec3(0, 0, 0)
+	origin = Point(0, 0, 0)
 	
 	img = zeros(RGB, ny, nx)
 	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
