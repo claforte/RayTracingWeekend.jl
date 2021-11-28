@@ -453,6 +453,9 @@ md"2 spheres (1 sample per pixel, i.e. aliased):"
 # ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
 #render(scene_2_spheres(), default_camera(), 96, 16)
 
+# ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
+#render(scene_4_spheres(), default_camera(), 200, 32)
+
 # ╔═╡ 5f1bae02-d425-4a73-8668-d6383faba79d
 md"""# Dielectrics
 
@@ -467,10 +470,14 @@ Split the parts of the ray into `R′=R′⊥+R′∥` (perpendicular and parall
 
 
 # ╔═╡ 9dc64353-c41c-45b4-aacd-12d5d6117c58
-function refract(dir::Vec3, n⃗::Vec3, ηᵢ_over_ηₜ::Float64)
+# """
+# 	Args:
+# 		refraction_ratio: incident refraction index divided by refraction index of 
+# 			hit surface. i.e. η/η′ in the figure above"""
+function refract(dir::Vec3, n⃗::Vec3, refraction_ratio::Float64)
 	cosθ = min(-dir ⋅ n⃗, 1)
-	r_out_perp = ηᵢ_over_ηₜ * (dir + cosθ*n⃗) # claforte: can't use ⟂ (\perp)... sigh
-	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗ # can't use ∥...
+	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
+	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗
 	normalize(r_out_perp + r_out_parallel)
 end
 
@@ -491,37 +498,36 @@ end
 
 # ╔═╡ f5c4e502-048c-4fcd-879f-eaeb4430c012
 mutable struct Dielectric <: Material
-	ir::Float64 # index of refraction, i.e. η
+	ir::Float64 # index of refraction, i.e. η.
 end
 
 # ╔═╡ 167cc207-7be6-4624-8425-2df81b3f6c3b
-#"""Schlick approximation:
-#https://raytracing.github.io/books/RayTracingInOneWeekend.html#dielectrics/schlickapproximation"""
-function reflectance(cosine::Float64, ηᵢ_over_ηₜ::Float64)
+function reflectance(cosθ::Float64, refraction_ratio::Float64)
 	# Use Schlick's approximation for reflectance.
-	r0 = (1-ηᵢ_over_ηₜ) / (1+ηᵢ_over_ηₜ)
+	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
+	r0 = (1-refraction_ratio) / (1+refraction_ratio)
 	r0 = r0^2
-	r0 + (1-r0)*((1-cosine)^5)
+	r0 + (1-r0)*((1-cosθ)^5)
 end
 
 # ╔═╡ ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
 function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
 	attenuation = Color(1,1,1)
-	ηᵢ_over_ηₜ = rec.front_face ? (1.0/mat.ir) : mat.ir # refraction ratio
+	refraction_ratio = rec.front_face ? (1.0/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
 	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0)
 	sinθ = √(1.0 - cosθ^2)
-	cannot_refract = ηᵢ_over_ηₜ * sinθ > 1.0
-	if cannot_refract || reflectance(cosθ, ηᵢ_over_ηₜ) > rand()
+	cannot_refract = refraction_ratio * sinθ > 1.0
+	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand()
 		dir = reflect(r_in.dir, rec.n⃗)
 	else
-		dir = refract(r_in.dir, rec.n⃗, ηᵢ_over_ηₜ)
+		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
 	end
 	Scatter(Ray(rec.p, dir), attenuation) # TODO: rename reflected -> !absorbed?
 end
 
 # ╔═╡ ddf5883c-036a-4a21-908d-bb7cec731f7f
 #"From C++: Image 15: Glass sphere that sometimes refracts"
-function scene_diel_spheres()::HittableList # dielectric spheres
+function scene_diel_spheres(left_radius=0.5)::HittableList # dielectric spheres
 	spheres = Sphere[]
 	
 	# small center sphere
@@ -530,11 +536,18 @@ function scene_diel_spheres()::HittableList # dielectric spheres
 	# ground sphere (planet?)
 	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100, Lambertian(Color(0.8,0.8,0.0))))
 	
-	# left and right Metal spheres
-	push!(spheres, Sphere(Vec3(-1,0,-1), 0.5, Dielectric(1.5))) 
+	# left and right spheres.
+	# Use a negative radius on the left sphere to create a "thin bubble" 
+	push!(spheres, Sphere(Vec3(-1,0,-1), left_radius, Dielectric(1.5))) 
 	push!(spheres, Sphere(Vec3( 1,0,-1), 0.5, Metal(Color(0.8,0.6,0.2), 0.0)))
 	HittableList(spheres)
 end
+
+# ╔═╡ 330a8972-adbd-471b-ade1-15901a258cbb
+#render(scene_diel_spheres(), default_camera(), 320, 32)
+
+# ╔═╡ 7c75b0d8-578d-4ca9-8d74-935c1ac582b9
+
 
 # ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 md"""# Random vectors
@@ -683,11 +696,12 @@ render(scene_2_spheres(), default_camera(), 96, 16)
 # ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
 render(scene_4_spheres(), default_camera(), 96, 16)
 
-# ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
-render(scene_4_spheres(), default_camera(), 200, 32)
-
 # ╔═╡ a1564d79-3628-4121-99a9-d3674e16eb04
 render(scene_diel_spheres(), default_camera(), 96, 16)
+
+# ╔═╡ 2e9672e3-f2b8-439e-b1f3-3cc60a459885
+# Hollow Glass sphere using a negative radius
+render(scene_diel_spheres(-0.5), default_camera(), 96, 16)
 
 # ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
 random_vec3_on_sphere()
@@ -1569,6 +1583,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
 # ╠═ddf5883c-036a-4a21-908d-bb7cec731f7f
 # ╠═a1564d79-3628-4121-99a9-d3674e16eb04
+# ╠═330a8972-adbd-471b-ade1-15901a258cbb
+# ╠═2e9672e3-f2b8-439e-b1f3-3cc60a459885
+# ╠═7c75b0d8-578d-4ca9-8d74-935c1ac582b9
 # ╟─30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 # ╠═1f4a9699-5c91-4e2c-b592-1bfa86c05959
 # ╠═795fdf6f-945e-44f8-8aa1-1e33586cc095
