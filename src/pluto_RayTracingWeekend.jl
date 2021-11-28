@@ -346,6 +346,9 @@ function hit(hittables::HittableList, r::Ray, tmin::Float64,
     rec
 end
 
+# ╔═╡ 737e2f87-82f5-45b6-a76c-4f560c29f5b9
+color_vec3_in_rgb(v::Vec3) = 0.5normalize(v) + Vec3(0.5,0.5,0.5)
+
 # ╔═╡ 851c002c-dc23-4999-b28c-a716c5d2d42c
 md"# Scenes"
 
@@ -402,6 +405,12 @@ md"# Render
 # ╔═╡ 97d9a286-2e70-4dd4-8407-62b3a89da16b
 md"2 spheres (1 sample per pixel, i.e. aliased):"
 
+# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
+#render(scene_two_spheres(), default_camera(), 96)
+
+# ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
+#render(scene_two_spheres(), default_camera(), 96, 16)
+
 # ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 md"""# Random vectors
 
@@ -443,17 +452,23 @@ end
 	Args:
 		depth: how many more levels of recursive ray bounces can we still compute?
 """
-function ray_color(r::Ray, world::HittableList, depth=100)::Vec3
+function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
     if depth <= 0
 		return Vec3(0,0,0)
 	end
 		
 	rec = hit(world, r, 0.0, Inf)
     if !ismissing(rec)
-		#0.5rec.n⃗ + Vec3(0.5,0.5,0.5) # show the normal in RGB
+		# For debugging, represent vectors as RGB:
+		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
+		# return color_vec3_in_rgb(rec.n⃗) # show the normal in RGB
+		# return color_vec3_in_rgb(rec.p + rec.n⃗)
+		# return color_vec3_in_rgb(random_vec3_in_sphere())
+		#return color_vec3_in_rgb(rec.n⃗ + random_vec3_in_sphere())
 
-		target = rec.p + rec.n⃗ + random_vec3_in_sphere()
-		return 0.5*ray_color(Ray(rec.p, normalize(target-rec.p)), world, depth-1)
+		target_dir = rec.n⃗ + random_vec3_in_sphere()
+		bounce_point = rec.p + 1e-4*rec.n⃗ # bounce away from the surface a tiny bit
+		return 0.5*ray_color(Ray(bounce_point, normalize(target_dir)), world, depth-1)
         # s = scatter(rec.mat, r, rec)
         # if s.reflect && depth < 20
         #     return s.attenuation .* color(s.ray, world, depth+1)
@@ -477,7 +492,7 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 				n_samples=1)
 	# Image
 	aspect_ratio = 16.0/9.0
-	image_height = convert(Int64, image_width / aspect_ratio)
+	image_height = convert(Int64, floor(image_width / aspect_ratio))
 
 	# Render
 	img = zeros(RGB, image_height, image_width)
@@ -505,12 +520,6 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 end
 
 # ╔═╡ aa38117f-45e8-4070-a412-958f0ce19aa5
-render(scene_two_spheres(), default_camera(), 24)
-
-# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-render(scene_two_spheres(), default_camera(), 96)
-
-# ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
 render(scene_two_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
@@ -1358,6 +1367,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═78efebc5-53fd-417d-bd9e-667fd504e3fd
 # ╠═05e57afd-6eb9-42c5-9666-7be3771fa6b8
 # ╠═08e18ae5-9927-485e-9644-552f03e06f27
+# ╠═737e2f87-82f5-45b6-a76c-4f560c29f5b9
 # ╠═f72214f9-03c4-4ba3-bb84-069256446b31
 # ╟─851c002c-dc23-4999-b28c-a716c5d2d42c
 # ╠═70530f8e-1b29-4588-927f-d38d5d12d5c9
