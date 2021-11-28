@@ -296,7 +296,8 @@ end
 struct Scatter
 	r::Ray
 	attenuation::Color
-	reflect::Bool
+	reflected::Bool # whether the scattered ray was reflected, or fully absorbed
+	Scatter(r,a,reflected=true) = new(r,a,reflected)
 end
 
 # ╔═╡ 88e51c27-0f28-4dcc-b9e9-ac44eeb876f5
@@ -304,6 +305,15 @@ end
 mutable struct Lambertian<:Material
 	albedo::Color
 end
+
+# ╔═╡ 7c4a67b2-8208-4cd4-b1ea-16f6f50adfe8
+"""Compute reflection vector for v (pointing to surface) and normal n⃗.
+
+	See [diagram](https://raytracing.github.io/books/RayTracingInOneWeekend.html#metal/mirroredlightreflection)"""
+reflect(v::Vec3, n⃗::Vec3) = normalize(v - (2v⋅n⃗)*n⃗) # claforte: normalize not needed?
+
+# ╔═╡ ca649864-5a6d-4ca7-896e-e80e8a48443e
+@assert reflect(Vec3(0.6,-0.8,0), Vec3(0,1,0)) == Vec3(0.6,0.8,0) # diagram's example
 
 # ╔═╡ 78efebc5-53fd-417d-bd9e-667fd504e3fd
 function hit(s::Sphere, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
@@ -354,11 +364,25 @@ end
 # ╔═╡ 737e2f87-82f5-45b6-a76c-4f560c29f5b9
 color_vec3_in_rgb(v::Vec3) = 0.5normalize(v) + Vec3(0.5,0.5,0.5)
 
+# ╔═╡ 0bf88264-d4c5-4d5a-babe-d2433e46024d
+md"# Metal material"
+
+# ╔═╡ 555bea1d-5178-48dd-87e6-4e2a2471a5dd
+mutable struct Metal<:Material
+	albedo::Color
+end
+
+# ╔═╡ c299ca47-46c4-42da-9f8b-ae3abbeb6e51
+function scatter(mat::Metal, r_in::Ray, rec::HitRecord)::Scatter
+	return Scatter(Ray(rec.p, reflect(r_in.dir, rec.n⃗)), mat.albedo)
+end
+
 # ╔═╡ 851c002c-dc23-4999-b28c-a716c5d2d42c
 md"# Scenes"
 
 # ╔═╡ 70530f8e-1b29-4588-927f-d38d5d12d5c9
-function scene_two_spheres()::HittableList
+#"Scene with 2 Lambertian spheres"
+function scene_2_spheres()::HittableList
 	spheres = Sphere[]
 	
 	# small center sphere
@@ -367,6 +391,13 @@ function scene_two_spheres()::HittableList
 	# ground sphere (planet?)
 	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100, Lambertian(Color(0.8,0.8,0.0))))
 	HittableList(spheres)
+end
+
+# ╔═╡ c5349670-4df4-421f-9d5a-b28c1b9040c2
+#"Scene with 2 Lambertian, 2 Metal spheres."
+function scene_4_spheres()::HittableList
+	scene = scene_2_spheres
+	#push!(scene.list, ) # TODO: 2 metal spheres
 end
 
 # ╔═╡ 282a4912-7a6e-44ae-90eb-f2f7c8f3d0f4
@@ -415,10 +446,10 @@ md"# Render
 md"2 spheres (1 sample per pixel, i.e. aliased):"
 
 # ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-#render(scene_two_spheres(), default_camera(), 96)
+#render(scene_2_spheres(), default_camera(), 96)
 
 # ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
-#render(scene_two_spheres(), default_camera(), 96, 16)
+#render(scene_2_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 md"""# Random vectors
@@ -478,7 +509,7 @@ function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
 	end
 	scattered_r = Ray(rec.p, scatter_dir)
 	attenuation = mat.albedo
-	return Scatter(scattered_r, attenuation, true)
+	return Scatter(scattered_r, attenuation)
 end
 
 # ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
@@ -501,12 +532,12 @@ function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
 		#return color_vec3_in_rgb(rec.n⃗ + random_vec3_in_sphere())
 
         s = scatter(rec.mat, r, rec)
-		if s.reflect
+		if s.reflected
 			return s.attenuation .* ray_color(s.r, world, depth-1)
 		else
 			return Vec3(0,0,0)
 		end
-        # if s.reflect && depth < 20
+        # if s.reflected && depth < 20
         #     return s.attenuation .* color(s.ray, world, depth+1)
         # else
         #     return Vec3(0.0, 0.0, 0.0)
@@ -556,10 +587,10 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 end
 
 # ╔═╡ aa38117f-45e8-4070-a412-958f0ce19aa5
-render(scene_two_spheres(), default_camera(), 96, 16)
+render(scene_2_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
-render(scene_two_spheres(), default_camera(), 96, 100)
+render(scene_2_spheres(), default_camera(), 96, 100)
 
 # ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
 random_vec3_on_sphere()
@@ -1402,14 +1433,20 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═4a396b3f-f920-4ec2-91f6-7d61fe2b9699
 # ╠═427f247c-055c-459e-9862-26e9f6f3e24f
 # ╠═88e51c27-0f28-4dcc-b9e9-ac44eeb876f5
+# ╠═7c4a67b2-8208-4cd4-b1ea-16f6f50adfe8
+# ╠═ca649864-5a6d-4ca7-896e-e80e8a48443e
 # ╠═485f9c5b-4c5d-453c-b190-e84ae0cd1a21
 # ╠═78efebc5-53fd-417d-bd9e-667fd504e3fd
 # ╠═05e57afd-6eb9-42c5-9666-7be3771fa6b8
 # ╠═08e18ae5-9927-485e-9644-552f03e06f27
 # ╠═737e2f87-82f5-45b6-a76c-4f560c29f5b9
 # ╠═f72214f9-03c4-4ba3-bb84-069256446b31
+# ╠═0bf88264-d4c5-4d5a-babe-d2433e46024d
+# ╠═555bea1d-5178-48dd-87e6-4e2a2471a5dd
+# ╠═c299ca47-46c4-42da-9f8b-ae3abbeb6e51
 # ╟─851c002c-dc23-4999-b28c-a716c5d2d42c
 # ╠═70530f8e-1b29-4588-927f-d38d5d12d5c9
+# ╠═c5349670-4df4-421f-9d5a-b28c1b9040c2
 # ╟─282a4912-7a6e-44ae-90eb-f2f7c8f3d0f4
 # ╠═a0e5a1f3-244f-427b-a335-7e233af1d9d8
 # ╠═5d00f26b-35f2-4071-8e04-227ffc25f184
