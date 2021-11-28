@@ -394,10 +394,14 @@ function scene_2_spheres()::HittableList
 end
 
 # ╔═╡ c5349670-4df4-421f-9d5a-b28c1b9040c2
-#"Scene with 2 Lambertian, 2 Metal spheres."
+#"""Scene with 2 Lambertian, 2 Metal spheres.
+#
+#	See https://raytracing.github.io/images/img-1.11-metal-shiny.png"""
 function scene_4_spheres()::HittableList
-	scene = scene_2_spheres
-	#push!(scene.list, ) # TODO: 2 metal spheres
+	scene = scene_2_spheres()
+	push!(scene.list, Sphere(Vec3(-1,0,-1), 0.5, Metal(Color(0.8,0.8,0.8)))) # left
+	push!(scene.list, Sphere(Vec3( 1,0,-1), 0.5, Metal(Color(0.8,0.6,0.2)))) # right
+	return scene
 end
 
 # ╔═╡ 282a4912-7a6e-44ae-90eb-f2f7c8f3d0f4
@@ -444,9 +448,6 @@ md"# Render
 
 # ╔═╡ 97d9a286-2e70-4dd4-8407-62b3a89da16b
 md"2 spheres (1 sample per pixel, i.e. aliased):"
-
-# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-#render(scene_2_spheres(), default_camera(), 96)
 
 # ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
 #render(scene_2_spheres(), default_camera(), 96, 16)
@@ -589,8 +590,11 @@ end
 # ╔═╡ aa38117f-45e8-4070-a412-958f0ce19aa5
 render(scene_2_spheres(), default_camera(), 96, 16)
 
+# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
+render(scene_4_spheres(), default_camera(), 96, 16)
+
 # ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
-render(scene_2_spheres(), default_camera(), 96, 100)
+render(scene_4_spheres(), default_camera(), 200, 32)
 
 # ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
 random_vec3_on_sphere()
