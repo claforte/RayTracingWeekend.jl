@@ -447,7 +447,7 @@ function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
 		return Vec3(0,0,0)
 	end
 		
-	rec = hit(world, r, 0.0, Inf)
+	rec = hit(world, r, 1e-4, Inf)
     if !ismissing(rec)
 		# For debugging, represent vectors as RGB:
 		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
