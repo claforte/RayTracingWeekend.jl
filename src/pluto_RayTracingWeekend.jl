@@ -494,6 +494,16 @@ mutable struct Dielectric <: Material
 	ir::Float64 # index of refraction, i.e. η
 end
 
+# ╔═╡ 167cc207-7be6-4624-8425-2df81b3f6c3b
+#"""Schlick approximation:
+#https://raytracing.github.io/books/RayTracingInOneWeekend.html#dielectrics/schlickapproximation"""
+function reflectance(cosine::Float64, ηᵢ_over_ηₜ::Float64)
+	# Use Schlick's approximation for reflectance.
+	r0 = (1-ηᵢ_over_ηₜ) / (1+ηᵢ_over_ηₜ)
+	r0 = r0^2
+	r0 + (1-r0)*((1-cosine)^5)
+end
+
 # ╔═╡ ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
 function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
 	attenuation = Color(1,1,1)
@@ -501,7 +511,7 @@ function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
 	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0)
 	sinθ = √(1.0 - cosθ^2)
 	cannot_refract = ηᵢ_over_ηₜ * sinθ > 1.0
-	if cannot_refract
+	if cannot_refract || reflectance(cosθ, ηᵢ_over_ηₜ) > rand()
 		dir = reflect(r_in.dir, rec.n⃗)
 	else
 		dir = refract(r_in.dir, rec.n⃗, ηᵢ_over_ηₜ)
@@ -1555,6 +1565,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═bbfd4db5-3650-4f27-9777-2ff981c3d28b
 # ╠═b54e631c-12ab-49c1-a63e-65b1c9a5d8b6
 # ╠═f5c4e502-048c-4fcd-879f-eaeb4430c012
+# ╠═167cc207-7be6-4624-8425-2df81b3f6c3b
 # ╠═ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
 # ╠═ddf5883c-036a-4a21-908d-bb7cec731f7f
 # ╠═a1564d79-3628-4121-99a9-d3674e16eb04
