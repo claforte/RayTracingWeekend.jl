@@ -370,11 +370,8 @@ md"# Metal material"
 # ╔═╡ 555bea1d-5178-48dd-87e6-4e2a2471a5dd
 mutable struct Metal<:Material
 	albedo::Color
-end
-
-# ╔═╡ c299ca47-46c4-42da-9f8b-ae3abbeb6e51
-function scatter(mat::Metal, r_in::Ray, rec::HitRecord)::Scatter
-	return Scatter(Ray(rec.p, reflect(r_in.dir, rec.n⃗)), mat.albedo)
+	fuzz::Float64 # how big the sphere used to generate fuzzy reflection rays. 0=none
+	Metal(a,f=0.0) = new(a,f)
 end
 
 # ╔═╡ 851c002c-dc23-4999-b28c-a716c5d2d42c
@@ -399,8 +396,10 @@ end
 #	See https://raytracing.github.io/images/img-1.11-metal-shiny.png"""
 function scene_4_spheres()::HittableList
 	scene = scene_2_spheres()
-	push!(scene.list, Sphere(Vec3(-1,0,-1), 0.5, Metal(Color(0.8,0.8,0.8)))) # left
-	push!(scene.list, Sphere(Vec3( 1,0,-1), 0.5, Metal(Color(0.8,0.6,0.2)))) # right
+
+	# left and right Metal spheres
+	push!(scene.list, Sphere(Vec3(-1,0,-1), 0.5, Metal(Color(0.8,0.8,0.8), 0.3))) 
+	push!(scene.list, Sphere(Vec3( 1,0,-1), 0.5, Metal(Color(0.8,0.6,0.2), 0.8)))
 	return scene
 end
 
@@ -511,6 +510,12 @@ function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
 	scattered_r = Ray(rec.p, scatter_dir)
 	attenuation = mat.albedo
 	return Scatter(scattered_r, attenuation)
+end
+
+# ╔═╡ c299ca47-46c4-42da-9f8b-ae3abbeb6e51
+function scatter(mat::Metal, r_in::Ray, rec::HitRecord)::Scatter
+	reflected = normalize(reflect(r_in.dir, rec.n⃗) + mat.fuzz*random_vec3_on_sphere())
+	Scatter(Ray(rec.p, reflected), mat.albedo)
 end
 
 # ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
