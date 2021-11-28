@@ -32,9 +32,8 @@ begin
 		end
 	end
 
-	function length_squared(vec::Vec3)
-		vec ⋅ vec
-	end
+	squared_length(vec::Vec3) = vec ⋅ vec
+	near_zero(vec::Vec3) = squared_length(vec) < 1e-5
 end
 
 # ╔═╡ 0866add2-9b95-45e7-8081-c01cd2a66911
@@ -117,7 +116,7 @@ t_col.r
 t_col.y
 
 # ╔═╡ 5fd1ec87-3616-448a-ab4d-fede804b26d5
-length_squared(t_col)
+squared_length(t_col)
 
 # ╔═╡ a0893bf4-9607-4853-8162-9f34d3337060
 rgb(v::Vec3) = RGB(v.r, v.g, v.b)
@@ -252,8 +251,11 @@ main(200,100,sphere_scene2)
 abstract type Hittable end
 
 # ╔═╡ 2c4b4453-1a46-4889-9a14-16b18cc8c240
-"Visual properties (e.g. texture) of an object"
+"""Materials tell us how rays interact with a surface"""
 abstract type Material end
+
+# ╔═╡ 98c43f3f-4bfc-49db-806a-850b7d75b5a4
+
 
 # ╔═╡ 3b570d37-f407-41d8-b8a0-a0af4d85b14d
 "Record a hit between a ray and an object's surface"
@@ -267,14 +269,14 @@ mutable struct HitRecord
 	# If true, our ray hit from outside to the front of the surface. 
 	# If false, the ray hit from within.
 	front_face::Bool
-	#mat::Material
+	mat::Material
 end
 
 # ╔═╡ 138bb5b6-0f45-4f13-8339-5110eb7cd1ff
 struct Sphere <: Hittable
 	center::Vec3
 	radius::Float64
-	#mat::Material
+	mat::Material
 end
 
 # ╔═╡ 6b36d245-bf01-45a7-b119-8315226dd4a3
@@ -284,10 +286,23 @@ md"""The geometry defines an `outside normal`. A HitRecord stores the `local nor
 
 # ╔═╡ 4a396b3f-f920-4ec2-91f6-7d61fe2b9699
 """Equivalent to `hit_record.set_face_normal()`"""
-function ray_to_HitRecord(t, p, outward_n⃗, r_dir::Vec3)
+function ray_to_HitRecord(t, p, outward_n⃗, r_dir::Vec3, mat::Material)
 	front_face = r_dir ⋅ outward_n⃗ < 0
 	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
-	rec = HitRecord(t,p,n⃗,front_face)
+	rec = HitRecord(t,p,n⃗,front_face,mat)
+end
+
+# ╔═╡ 427f247c-055c-459e-9862-26e9f6f3e24f
+struct Scatter
+	r::Ray
+	attenuation::Color
+	reflect::Bool
+end
+
+# ╔═╡ 88e51c27-0f28-4dcc-b9e9-ac44eeb876f5
+#"Diffuse material"
+mutable struct Lambertian<:Material
+	albedo::Color
 end
 
 # ╔═╡ 78efebc5-53fd-417d-bd9e-667fd504e3fd
@@ -312,7 +327,7 @@ function hit(s::Sphere, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
 	t = root
 	p = point(r, t)
 	n⃗ = (p - s.center) / s.radius
-	return ray_to_HitRecord(t, p, n⃗, r.dir)
+	return ray_to_HitRecord(t, p, n⃗, r.dir,s.mat)
 end
 
 # ╔═╡ 05e57afd-6eb9-42c5-9666-7be3771fa6b8
@@ -339,49 +354,18 @@ end
 # ╔═╡ 737e2f87-82f5-45b6-a76c-4f560c29f5b9
 color_vec3_in_rgb(v::Vec3) = 0.5normalize(v) + Vec3(0.5,0.5,0.5)
 
-# ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
-"""Compute color for a ray, recursively
-
-	Args:
-		depth: how many more levels of recursive ray bounces can we still compute?
-"""
-function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
-    if depth <= 0
-		return Vec3(0,0,0)
-	end
-		
-	rec = hit(world, r, 1e-4, Inf)
-    if !ismissing(rec)
-		# For debugging, represent vectors as RGB:
-		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
-		# return color_vec3_in_rgb(rec.n⃗) # show the normal in RGB
-		# return color_vec3_in_rgb(rec.p + rec.n⃗)
-		# return color_vec3_in_rgb(random_vec3_in_sphere())
-		#return color_vec3_in_rgb(rec.n⃗ + random_vec3_in_sphere())
-
-		# True Lambertian reflection
-		target_dir = rec.n⃗ + random_vec3_on_sphere()
-		bounce_point = rec.p + 1e-4*rec.n⃗ # bounce away from the surface a tiny bit
-		return 0.5*ray_color(Ray(bounce_point, normalize(target_dir)), world, depth-1)
-        # s = scatter(rec.mat, r, rec)
-        # if s.reflect && depth < 20
-        #     return s.attenuation .* color(s.ray, world, depth+1)
-        # else
-        #     return Vec3(0.0, 0.0, 0.0)
-        # end
-    else
-        sky_color(r)
-    end
-end
-
 # ╔═╡ 851c002c-dc23-4999-b28c-a716c5d2d42c
 md"# Scenes"
 
 # ╔═╡ 70530f8e-1b29-4588-927f-d38d5d12d5c9
 function scene_two_spheres()::HittableList
 	spheres = Sphere[]
-	push!(spheres, Sphere(Vec3(0,0,-1), 0.5)) # small sphere
-	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100)) # huge sphere (planet?)
+	
+	# small center sphere
+	push!(spheres, Sphere(Vec3(0,0,-1), 0.5, Lambertian(Color(0.7,0.3,0.3))))
+	
+	# ground sphere (planet?)
+	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100, Lambertian(Color(0.8,0.8,0.0))))
 	HittableList(spheres)
 end
 
@@ -427,14 +411,119 @@ md"# Render
 
 (equivalent to final `main`)"
 
+# ╔═╡ 97d9a286-2e70-4dd4-8407-62b3a89da16b
+md"2 spheres (1 sample per pixel, i.e. aliased):"
+
+# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
+#render(scene_two_spheres(), default_camera(), 96)
+
+# ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
+#render(scene_two_spheres(), default_camera(), 96, 16)
+
+# ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
+md"""# Random vectors
+
+C++'s section 8.1"""
+
+
+# ╔═╡ 1f4a9699-5c91-4e2c-b592-1bfa86c05959
+random_between(min=0.0, max=1.0) = rand()*(max-min) + min # equiv to random_double()
+
+# ╔═╡ 795fdf6f-945e-44f8-8aa1-1e33586cc095
+random_between(50, 100)
+
+# ╔═╡ f7d47388-076b-416c-a088-c8963009faa6
+begin
+	[random_between(50.0, 100.0) for i in 1:3]
+end
+
+# ╔═╡ 927e351c-3529-4dc1-b342-e5c040fdc6e2
+function random_vec3(min=0.0, max=1.0)
+	Vec3([random_between(min, max) for i in 1:3]...)
+end
+
+# ╔═╡ 7e98cea8-90b4-44da-b234-a60c1a3b2fa4
+random_vec3(-1,1)
+
+# ╔═╡ 58e91524-be98-4b67-bd9a-5c682cb5c009
+function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
+	while (true)
+		p = random_vec3(-1,1)
+		if squared_length(p) <= 1
+			return p
+		end
+	end
+end
+
+# ╔═╡ 44fc6b51-c682-4fa9-9ebe-804a4f3397be
+squared_length(random_vec3_in_sphere())
+
+# ╔═╡ a0c4f8dc-5580-413b-99ee-dcb7b6c92c8d
+"Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
+random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
+
+# ╔═╡ 485f9c5b-4c5d-453c-b190-e84ae0cd1a21
+# """Create a scattered ray emitted by `mat` from incident Ray `r`. 
+
+# 	Args:
+# 		rec: the HitRecord of the surface from which to scatter the ray.
+
+# 	Return missing if it's fully absorbed. """
+function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
+	scatter_dir = rec.n⃗ + random_vec3_on_sphere()
+	if near_zero(scatter_dir) # Catch degenerate scatter direction
+		scatter_dir = rec.n⃗ 
+	else
+		scatter_dir = normalize(scatter_dir)
+	end
+	scattered_r = Ray(rec.p, scatter_dir)
+	attenuation = mat.albedo
+	return Scatter(scattered_r, attenuation, true)
+end
+
+# ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
+"""Compute color for a ray, recursively
+
+	Args:
+		depth: how many more levels of recursive ray bounces can we still compute?"""
+function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
+    if depth <= 0
+		return Vec3(0,0,0)
+	end
+		
+	rec = hit(world, r, 1e-4, Inf)
+    if !ismissing(rec)
+		# For debugging, represent vectors as RGB:
+		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
+		# return color_vec3_in_rgb(rec.n⃗) # show the normal in RGB
+		# return color_vec3_in_rgb(rec.p + rec.n⃗)
+		# return color_vec3_in_rgb(random_vec3_in_sphere())
+		#return color_vec3_in_rgb(rec.n⃗ + random_vec3_in_sphere())
+
+        s = scatter(rec.mat, r, rec)
+		if s.reflect
+			return s.attenuation .* ray_color(s.r, world, depth-1)
+		else
+			return Vec3(0,0,0)
+		end
+        # if s.reflect && depth < 20
+        #     return s.attenuation .* color(s.ray, world, depth+1)
+        # else
+        #     return Vec3(0.0, 0.0, 0.0)
+        # end
+    else
+        sky_color(r)
+    end
+end
+
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
-"""
+"""Render an image of `scene` using the specified camera, number of samples.
+
 	Args:
 		scene: a HittableList, e.g. a list of spheres
-		n_samples: number of samples per pixel, eq. to C++ `samples_per_pixel`
+		n_samples: number of samples per pixel, eq. to C++ samples_per_pixel
 
-	Equivalent to C++'s `main` function.
-"""
+	Equivalent to C++'s `main` function."""
 function render(scene::HittableList, cam::Camera, image_width=400,
 				n_samples=1)
 	# Image
@@ -466,62 +555,11 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 	img
 end
 
-# ╔═╡ 97d9a286-2e70-4dd4-8407-62b3a89da16b
-md"2 spheres (1 sample per pixel, i.e. aliased):"
-
 # ╔═╡ aa38117f-45e8-4070-a412-958f0ce19aa5
 render(scene_two_spheres(), default_camera(), 96, 16)
 
-# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-#render(scene_two_spheres(), default_camera(), 96)
-
-# ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
-#render(scene_two_spheres(), default_camera(), 96, 16)
-
 # ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
 render(scene_two_spheres(), default_camera(), 96, 100)
-
-# ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
-md"""# Random vectors
-
-C++'s section 8.1"""
-
-
-# ╔═╡ 1f4a9699-5c91-4e2c-b592-1bfa86c05959
-random_between(min=0.0, max=1.0) = rand()*(max-min) + min # equiv to random_double()
-
-# ╔═╡ 795fdf6f-945e-44f8-8aa1-1e33586cc095
-random_between(50, 100)
-
-# ╔═╡ f7d47388-076b-416c-a088-c8963009faa6
-begin
-	[random_between(50.0, 100.0) for i in 1:3]
-end
-
-# ╔═╡ 927e351c-3529-4dc1-b342-e5c040fdc6e2
-function random_vec3(min=0.0, max=1.0)
-	Vec3([random_between(min, max) for i in 1:3]...)
-end
-
-# ╔═╡ 7e98cea8-90b4-44da-b234-a60c1a3b2fa4
-random_vec3(-1,1)
-
-# ╔═╡ 58e91524-be98-4b67-bd9a-5c682cb5c009
-function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
-	while (true)
-		p = random_vec3(-1,1)
-		if length_squared(p) <= 1
-			return p
-		end
-	end
-end
-
-# ╔═╡ 44fc6b51-c682-4fa9-9ebe-804a4f3397be
-length_squared(random_vec3_in_sphere())
-
-# ╔═╡ a0c4f8dc-5580-413b-99ee-dcb7b6c92c8d
-"Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
-random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
 
 # ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
 random_vec3_on_sphere()
@@ -1357,10 +1395,14 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═ed6ab8be-587c-4cb6-8172-618c74d3f9cc
 # ╠═a65c68c9-e489-465a-9687-93ae9da14a5e
 # ╠═2c4b4453-1a46-4889-9a14-16b18cc8c240
+# ╠═98c43f3f-4bfc-49db-806a-850b7d75b5a4
 # ╠═3b570d37-f407-41d8-b8a0-a0af4d85b14d
 # ╠═138bb5b6-0f45-4f13-8339-5110eb7cd1ff
 # ╟─6b36d245-bf01-45a7-b119-8315226dd4a3
 # ╠═4a396b3f-f920-4ec2-91f6-7d61fe2b9699
+# ╠═427f247c-055c-459e-9862-26e9f6f3e24f
+# ╠═88e51c27-0f28-4dcc-b9e9-ac44eeb876f5
+# ╠═485f9c5b-4c5d-453c-b190-e84ae0cd1a21
 # ╠═78efebc5-53fd-417d-bd9e-667fd504e3fd
 # ╠═05e57afd-6eb9-42c5-9666-7be3771fa6b8
 # ╠═08e18ae5-9927-485e-9644-552f03e06f27
