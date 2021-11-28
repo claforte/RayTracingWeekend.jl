@@ -7,15 +7,6 @@ using InteractiveUtils
 # ╔═╡ 38fdd4ef-c383-4f97-8451-c6f602307e7d
 using Images
 
-# ╔═╡ 26b1fcfd-3f8a-4a0c-9f33-41d92a381f83
-begin
-	using Distributed
-	using ProgressMeter
-	# @showprogress 1 "Computing..." for i in 1:50
-	#     sleep(0.01)
-	# end
-end
-
 # ╔═╡ 3dceca5d-7d1e-425b-9516-24e0a24adaff
 using LinearAlgebra
 
@@ -92,14 +83,6 @@ end
 # ╔═╡ 154d736b-8fdc-44af-ae2a-9e5ba6d2c92e
 gradient(200,100)
 
-# ╔═╡ d4f551ad-b304-44af-9078-6166da638979
-@showprogress 1 "Computing..." for i in 1:50
-    sleep(0.01)
-end
-
-# ╔═╡ 46f52feb-c9c7-4585-8a68-6dc7fba74e73
-@info 1
-
 # ╔═╡ 216922d8-613a-4ac1-9559-40878e6587e2
 md"""Unlike the C++ implementation:
 - Julia uses i for row, j for column, so I inverted the C++ code's variable names.
@@ -125,10 +108,9 @@ Use these convenient unicode characters:
 [0;1;0] × [0;0;1]
 
 # ╔═╡ 78f209df-d176-4711-80fc-a8054771f105
-t_col = Color(1.0, 0.5, 0.0) # test color
+t_col = Color(0.4, 0.5, 0.1) # test color
 
 # ╔═╡ e88de775-6904-4182-8209-06db22758470
-# doesn't work yet... "type SArray has no field x"
 t_col.r
 
 # ╔═╡ 3e6fd5c0-6d4a-44ef-a7b2-106b52fc6550
@@ -137,11 +119,17 @@ t_col.y
 # ╔═╡ 5fd1ec87-3616-448a-ab4d-fede804b26d5
 length_squared(t_col)
 
-# ╔═╡ 252fed01-c291-475a-a6a8-09ff20bdf8a7
-function color(v::Vec3) RGB(v.r, v.g, v.b) end
+# ╔═╡ a0893bf4-9607-4853-8162-9f34d3337060
+rgb(v::Vec3) = RGB(v.r, v.g, v.b)
 
 # ╔═╡ cfbcb883-d12e-4ad3-a084-064749bddcdb
-color(t_col)
+rgb(t_col)
+
+# ╔═╡ 6348c03d-e8ec-4dbb-9f8a-8e4a48bb1cb3
+rgb_gamma2(v::Vec3) = RGB(sqrt.(v)...)
+
+# ╔═╡ dbc8fc2d-39c2-4ec9-b82d-7c6a8b12dde7
+rgb_gamma2(t_col)
 
 # ╔═╡ 53832af1-a9be-4e02-8b71-a70dae63c233
 struct Ray
@@ -167,11 +155,11 @@ end
 
 # ╔═╡ 14be6068-6a15-4fad-ac0a-f156da71f103
 # interpolates between blue and white
-color(Color(0.5, 0.7, 1.0)), color(Color(1.0, 1.0, 1.0))
+rgb(Color(0.5, 0.7, 1.0)), rgb(Color(1.0, 1.0, 1.0))
 
 # ╔═╡ 64ef0313-2d2b-49d5-a1a1-3b04426a82f8
 begin
-	color(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
+	rgb(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
 end
 
 # ╔═╡ 971777a6-f269-4344-8dba-7a55118396e5
@@ -194,7 +182,7 @@ function main(nx::Int, ny::Int, scene)
 		#r = x/nx
 		#g = y/ny
 		#b = 0.2
-		img[i,j] = color(scene(ray))
+		img[i,j] = rgb(scene(ray))
 	end
 	img
 end
@@ -516,7 +504,7 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 			ray = get_ray(cam, u, v)
 			accum_color += ray_color(ray, scene)
 		end
-		img[i,j] = color(accum_color / n_samples)
+		img[i,j] = rgb_gamma2(accum_color / n_samples)
 	end
 	img
 end
@@ -533,15 +521,12 @@ length_squared(random_vec3_in_sphere())
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
-Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 Images = "~0.25.0"
-ProgressMeter = "~1.7.1"
 StaticArrays = "~1.2.13"
 """
 
@@ -1328,9 +1313,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═538d1aa5-07f9-4fca-8410-ef63b8a6857b
 # ╠═8aeb7373-6bb0-4544-8655-fa941561688c
 # ╠═154d736b-8fdc-44af-ae2a-9e5ba6d2c92e
-# ╠═26b1fcfd-3f8a-4a0c-9f33-41d92a381f83
-# ╠═d4f551ad-b304-44af-9078-6166da638979
-# ╠═46f52feb-c9c7-4585-8a68-6dc7fba74e73
 # ╟─216922d8-613a-4ac1-9559-40878e6587e2
 # ╠═961fd749-d439-4dfa-ae21-b1659dc54511
 # ╟─7249557b-043c-4994-bec7-615f137f98e3
@@ -1342,8 +1324,10 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═e88de775-6904-4182-8209-06db22758470
 # ╠═3e6fd5c0-6d4a-44ef-a7b2-106b52fc6550
 # ╠═5fd1ec87-3616-448a-ab4d-fede804b26d5
-# ╠═252fed01-c291-475a-a6a8-09ff20bdf8a7
+# ╠═a0893bf4-9607-4853-8162-9f34d3337060
 # ╠═cfbcb883-d12e-4ad3-a084-064749bddcdb
+# ╠═6348c03d-e8ec-4dbb-9f8a-8e4a48bb1cb3
+# ╠═dbc8fc2d-39c2-4ec9-b82d-7c6a8b12dde7
 # ╠═53832af1-a9be-4e02-8b71-a70dae63c233
 # ╠═81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
 # ╟─678214c5-de81-489f-b002-c343d48071c9
