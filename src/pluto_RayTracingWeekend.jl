@@ -408,8 +408,7 @@ end
 # ╔═╡ 282a4912-7a6e-44ae-90eb-f2f7c8f3d0f4
 md"""# Camera
 
-Adapted from C++'s section 7.2
-"""
+Adapted from C++'s sections 7.2, 11.1 """
 
 # ╔═╡ a0e5a1f3-244f-427b-a335-7e233af1d9d8
 mutable struct Camera
@@ -420,7 +419,13 @@ mutable struct Camera
 end
 
 # ╔═╡ 5d00f26b-35f2-4071-8e04-227ffc25f184
-function default_camera(aspect_ratio=16.0/9.0, viewport_height=2.0, focal_length=1.0)
+# """
+# 	Args:
+# 		vfov: vertical field-of-view in degrees
+# 		aspect_ratio: horizontal/vertical ratio of pixels
+# """
+function default_camera(vfov=90.0, aspect_ratio=16.0/9.0, focal_length=1.0)
+	viewport_height = 2.0 * tand(vfov/2)
 	viewport_width = aspect_ratio * viewport_height
 	origin = Vec3(0,0,0)
 	horizontal = Vec3(viewport_width, 0, 0)
@@ -446,9 +451,6 @@ clamp(3.5, 0, 1)
 md"# Render
 
 (equivalent to final `main`)"
-
-# ╔═╡ 97d9a286-2e70-4dd4-8407-62b3a89da16b
-md"2 spheres (1 sample per pixel, i.e. aliased):"
 
 # ╔═╡ 4dd59aa7-37a7-426b-8573-a0fee26343df
 #render(scene_2_spheres(), default_camera(), 96, 16)
@@ -546,8 +548,17 @@ end
 # ╔═╡ 330a8972-adbd-471b-ade1-15901a258cbb
 #render(scene_diel_spheres(), default_camera(), 320, 32)
 
-# ╔═╡ 7c75b0d8-578d-4ca9-8d74-935c1ac582b9
+# ╔═╡ 0587d381-b957-4c40-b6b7-e5e0fd46267b
+md"# Positioning camera"
 
+# ╔═╡ 7c75b0d8-578d-4ca9-8d74-935c1ac582b9
+function scene_blue_red_spheres()::HittableList # dielectric spheres
+	spheres = Sphere[]
+	R = cos(pi/4)
+	push!(spheres, Sphere(Vec3(-R,0,-1), R, Lambertian(Color(0,0,1)))) 
+	push!(spheres, Sphere(Vec3( R,0,-1), R, Lambertian(Color(1,0,0)))) 
+	HittableList(spheres)
+end
 
 # ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 md"""# Random vectors
@@ -701,7 +712,13 @@ render(scene_diel_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ 2e9672e3-f2b8-439e-b1f3-3cc60a459885
 # Hollow Glass sphere using a negative radius
+# claforte: getting a weird black halo in the glass sphere... might be due to my
+# "fix" for previous black spots, by moving the RecordHit point a bit away from 
+# the hit surface... 
 render(scene_diel_spheres(-0.5), default_camera(), 96, 16)
+
+# ╔═╡ dcde1539-23af-4abf-96d3-6a903add3ea8
+render(scene_blue_red_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
 random_vec3_on_sphere()
@@ -1567,7 +1584,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═a4493f3a-cb9f-404e-830d-a7d007df5baf
 # ╟─891ce2c8-f8b2-472b-a8d9-389dafddcf22
 # ╠═64104df6-4b79-4329-bfed-14619aa73e3c
-# ╟─97d9a286-2e70-4dd4-8407-62b3a89da16b
 # ╠═aa38117f-45e8-4070-a412-958f0ce19aa5
 # ╠═9fd417cc-afa9-4f12-9c29-748f0522554c
 # ╠═4dd59aa7-37a7-426b-8573-a0fee26343df
@@ -1585,7 +1601,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═a1564d79-3628-4121-99a9-d3674e16eb04
 # ╠═330a8972-adbd-471b-ade1-15901a258cbb
 # ╠═2e9672e3-f2b8-439e-b1f3-3cc60a459885
+# ╟─0587d381-b957-4c40-b6b7-e5e0fd46267b
 # ╠═7c75b0d8-578d-4ca9-8d74-935c1ac582b9
+# ╠═dcde1539-23af-4abf-96d3-6a903add3ea8
 # ╟─30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 # ╠═1f4a9699-5c91-4e2c-b592-1bfa86c05959
 # ╠═795fdf6f-945e-44f8-8aa1-1e33586cc095
