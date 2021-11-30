@@ -109,6 +109,9 @@ Use these convenient unicode characters:
 # ╔═╡ 78f209df-d176-4711-80fc-a8054771f105
 t_col = Color(0.4, 0.5, 0.1) # test color
 
+# ╔═╡ 7f1802d6-44f1-454f-ac3b-08499dab9ee4
+t.xy
+
 # ╔═╡ e88de775-6904-4182-8209-06db22758470
 t_col.r
 
@@ -424,13 +427,20 @@ end
 # 		vfov: vertical field-of-view in degrees
 # 		aspect_ratio: horizontal/vertical ratio of pixels
 # """
-function default_camera(vfov=90.0, aspect_ratio=16.0/9.0, focal_length=1.0)
+function default_camera(lookfrom::Point=Point(0,0,0), lookat::Point=Point(0,0,-1), 
+						vup::Vec3=Vec3(0,1,0), vfov=90.0, aspect_ratio=16.0/9.0,
+						focal_length=1.0)
 	viewport_height = 2.0 * tand(vfov/2)
 	viewport_width = aspect_ratio * viewport_height
-	origin = Vec3(0,0,0)
-	horizontal = Vec3(viewport_width, 0, 0)
-	vertical = Vec3(0, viewport_height, 0)
-	lower_left_corner = origin - horizontal/2 - vertical/2 - Vec3(0,0,focal_length)
+	
+	w = normalize(lookfrom - lookat)
+	u = normalize(vup × w)
+	v = w × u
+	
+	origin = lookfrom
+	horizontal = viewport_width * u
+	vertical = viewport_height * v
+	lower_left_corner = origin - horizontal/2 - vertical/2 - w
 	Camera(origin, lower_left_corner, horizontal, vertical)
 end
 
@@ -438,8 +448,8 @@ end
 default_camera()
 
 # ╔═╡ 94081092-afc6-4359-bd2c-15e8407bf70e
-get_ray(c::Camera, u::Float64, v::Float64) =
-	Ray(c.origin, normalize(c.lower_left_corner + u*c.horizontal + v*c.vertical - c.origin))
+get_ray(c::Camera, s::Float64, t::Float64) =
+	Ray(c.origin, normalize(c.lower_left_corner + s*c.horizontal + t*c.vertical - c.origin))
 
 # ╔═╡ 813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
 get_ray(default_camera(), 0.0, 0.0)
@@ -719,6 +729,10 @@ render(scene_diel_spheres(-0.5), default_camera(), 96, 16)
 
 # ╔═╡ dcde1539-23af-4abf-96d3-6a903add3ea8
 render(scene_blue_red_spheres(), default_camera(), 96, 16)
+
+# ╔═╡ e7f5c672-0bd9-4cfe-8a47-17cd67aa01f4
+render(scene_diel_spheres(), default_camera(Point(-2,2,1), Point(0,0,-1),
+							 				Vec3(0,1,0), 20.0), 96, 32)
 
 # ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
 random_vec3_on_sphere()
@@ -1529,6 +1543,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═668030c8-24a7-4aa6-b858-cedf8ac5f988
 # ╠═3eb50f44-9091-45e8-a7e1-92d25b4b2090
 # ╠═78f209df-d176-4711-80fc-a8054771f105
+# ╠═7f1802d6-44f1-454f-ac3b-08499dab9ee4
 # ╠═e88de775-6904-4182-8209-06db22758470
 # ╠═3e6fd5c0-6d4a-44ef-a7b2-106b52fc6550
 # ╠═5fd1ec87-3616-448a-ab4d-fede804b26d5
@@ -1604,6 +1619,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─0587d381-b957-4c40-b6b7-e5e0fd46267b
 # ╠═7c75b0d8-578d-4ca9-8d74-935c1ac582b9
 # ╠═dcde1539-23af-4abf-96d3-6a903add3ea8
+# ╠═e7f5c672-0bd9-4cfe-8a47-17cd67aa01f4
 # ╟─30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 # ╠═1f4a9699-5c91-4e2c-b592-1bfa86c05959
 # ╠═795fdf6f-945e-44f8-8aa1-1e33586cc095
