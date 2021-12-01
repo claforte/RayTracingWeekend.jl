@@ -15,11 +15,12 @@ begin
 	using StaticArrays
 	Option{T} = Union{Missing, T}
 	Vec3 = SVector{3}
+	Vec2 = SVector{2}
 	Point = Vec3
 	Color = Vec3
 	
 	import Base.getproperty
-	function Base.getproperty(vec::Vec3, sym::Symbol)
+	function Base.getproperty(vec::SVector, sym::Symbol)
 		#  TODO: use a dictionary that maps symbols to indices, e.g. Dict(:x->1)
 		if sym in [:x, :r]
 			return vec[1]
@@ -32,8 +33,8 @@ begin
 		end
 	end
 
-	squared_length(vec::Vec3) = vec ⋅ vec
-	near_zero(vec::Vec3) = squared_length(vec) < 1e-5
+	squared_length(v::SVector) = v ⋅ v
+	near_zero(v::SVector) = squared_length(v) < 1e-5
 end
 
 # ╔═╡ 0866add2-9b95-45e7-8081-c01cd2a66911
@@ -108,9 +109,6 @@ Use these convenient unicode characters:
 
 # ╔═╡ 78f209df-d176-4711-80fc-a8054771f105
 t_col = Color(0.4, 0.5, 0.1) # test color
-
-# ╔═╡ 7f1802d6-44f1-454f-ac3b-08499dab9ee4
-t.xy
 
 # ╔═╡ e88de775-6904-4182-8209-06db22758470
 t_col.r
@@ -419,6 +417,10 @@ mutable struct Camera
 	lower_left_corner::Vec3
 	horizontal::Vec3
 	vertical::Vec3
+	u::Vec3
+	v::Vec3
+	w::Vec3
+	lens_radius::Float64
 end
 
 # ╔═╡ 5d00f26b-35f2-4071-8e04-227ffc25f184
@@ -426,10 +428,11 @@ end
 # 	Args:
 # 		vfov: vertical field-of-view in degrees
 # 		aspect_ratio: horizontal/vertical ratio of pixels
+#       aperture: if 0 - no depth-of-field
 # """
 function default_camera(lookfrom::Point=Point(0,0,0), lookat::Point=Point(0,0,-1), 
 						vup::Vec3=Vec3(0,1,0), vfov=90.0, aspect_ratio=16.0/9.0,
-						focal_length=1.0)
+						aperture=0.0, focus_dist=1.0)
 	viewport_height = 2.0 * tand(vfov/2)
 	viewport_width = aspect_ratio * viewport_height
 	
@@ -438,21 +441,15 @@ function default_camera(lookfrom::Point=Point(0,0,0), lookat::Point=Point(0,0,-1
 	v = w × u
 	
 	origin = lookfrom
-	horizontal = viewport_width * u
-	vertical = viewport_height * v
-	lower_left_corner = origin - horizontal/2 - vertical/2 - w
-	Camera(origin, lower_left_corner, horizontal, vertical)
+	horizontal = focus_dist * viewport_width * u
+	vertical = focus_dist * viewport_height * v
+	lower_left_corner = origin - horizontal/2 - vertical/2 - focus_dist*w
+	lens_radius = aperture/2
+	Camera(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius)
 end
 
 # ╔═╡ c1aef1be-79d4-4417-be36-ae8416465986
 default_camera()
-
-# ╔═╡ 94081092-afc6-4359-bd2c-15e8407bf70e
-get_ray(c::Camera, s::Float64, t::Float64) =
-	Ray(c.origin, normalize(c.lower_left_corner + s*c.horizontal + t*c.vertical - c.origin))
-
-# ╔═╡ 813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
-get_ray(default_camera(), 0.0, 0.0)
 
 # ╔═╡ a4493f3a-cb9f-404e-830d-a7d007df5baf
 clamp(3.5, 0, 1)
@@ -570,6 +567,9 @@ function scene_blue_red_spheres()::HittableList # dielectric spheres
 	HittableList(spheres)
 end
 
+# ╔═╡ e3ef265c-1911-429d-84be-5d5174d55fa1
+md"# Spheres with depth-of- field"
+
 # ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 md"""# Random vectors
 
@@ -672,18 +672,45 @@ function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
     end
 end
 
+# ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
+random_vec3_on_sphere()
+
+# ╔═╡ fbd3a778-60e5-412a-869f-f2a15f605c34
+norm(random_vec3_on_sphere())
+
+# ╔═╡ 448111de-931d-48d0-972c-ff39858dcc47
+function random_vec2_in_disk() :: Vec2 # equiv to random_in_unit_disk()
+	while (true)
+		p = Vec2(rand(2)...)
+		if squared_length(p) <= 1
+			return p
+		end
+	end
+end
+
+# ╔═╡ 94081092-afc6-4359-bd2c-15e8407bf70e
+function get_ray(c::Camera, s::Float64, t::Float64)
+	rd = Vec2(c.lens_radius * random_vec2_in_disk())
+	offset = c.u * rd.x + c.v * rd.y
+	Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
+									 t*c.vertical - c.origin - offset))
+end
+
+# ╔═╡ 813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
+get_ray(default_camera(), 0.0, 0.0)
+
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
-"""Render an image of `scene` using the specified camera, number of samples.
+# """Render an image of `scene` using the specified camera, number of samples.
 
-	Args:
-		scene: a HittableList, e.g. a list of spheres
-		n_samples: number of samples per pixel, eq. to C++ samples_per_pixel
+# 	Args:
+# 		scene: a HittableList, e.g. a list of spheres
+# 		n_samples: number of samples per pixel, eq. to C++ samples_per_pixel
 
-	Equivalent to C++'s `main` function."""
+# 	Equivalent to C++'s `main` function."""
 function render(scene::HittableList, cam::Camera, image_width=400,
 				n_samples=1)
 	# Image
-	aspect_ratio = 16.0/9.0
+	aspect_ratio = 16.0/9.0 # TODO: use cam.aspect_ratio for consistency
 	image_height = convert(Int64, floor(image_width / aspect_ratio))
 
 	# Render
@@ -732,13 +759,20 @@ render(scene_blue_red_spheres(), default_camera(), 96, 16)
 
 # ╔═╡ e7f5c672-0bd9-4cfe-8a47-17cd67aa01f4
 render(scene_diel_spheres(), default_camera(Point(-2,2,1), Point(0,0,-1),
-							 				Vec3(0,1,0), 20.0), 96, 32)
+							 				Vec3(0,1,0), 20.0), 96, 16)
 
-# ╔═╡ 9cad61ba-6b12-4681-b927-2689b12e9a0d
-random_vec3_on_sphere()
+# ╔═╡ a7d95d91-6571-4696-bad3-2979296d5f84
+begin
+	t_lookfrom = Point(3.0,3.0,2.0)
+	t_lookat = Point(0.0,0.0,-1.0)
+	dist_to_focus = norm(t_lookfrom-t_lookat)
+	t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
+						   2.0, dist_to_focus)
+	render(scene_diel_spheres(), t_cam, 96, 16)
+end
 
-# ╔═╡ fbd3a778-60e5-412a-869f-f2a15f605c34
-norm(random_vec3_on_sphere())
+# ╔═╡ 28ec976a-f678-409a-b6e5-b1ffe6f29a0f
+
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1543,7 +1577,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═668030c8-24a7-4aa6-b858-cedf8ac5f988
 # ╠═3eb50f44-9091-45e8-a7e1-92d25b4b2090
 # ╠═78f209df-d176-4711-80fc-a8054771f105
-# ╠═7f1802d6-44f1-454f-ac3b-08499dab9ee4
 # ╠═e88de775-6904-4182-8209-06db22758470
 # ╠═3e6fd5c0-6d4a-44ef-a7b2-106b52fc6550
 # ╠═5fd1ec87-3616-448a-ab4d-fede804b26d5
@@ -1620,6 +1653,8 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═7c75b0d8-578d-4ca9-8d74-935c1ac582b9
 # ╠═dcde1539-23af-4abf-96d3-6a903add3ea8
 # ╠═e7f5c672-0bd9-4cfe-8a47-17cd67aa01f4
+# ╠═e3ef265c-1911-429d-84be-5d5174d55fa1
+# ╠═a7d95d91-6571-4696-bad3-2979296d5f84
 # ╟─30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 # ╠═1f4a9699-5c91-4e2c-b592-1bfa86c05959
 # ╠═795fdf6f-945e-44f8-8aa1-1e33586cc095
@@ -1631,5 +1666,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═a0c4f8dc-5580-413b-99ee-dcb7b6c92c8d
 # ╠═9cad61ba-6b12-4681-b927-2689b12e9a0d
 # ╠═fbd3a778-60e5-412a-869f-f2a15f605c34
+# ╠═448111de-931d-48d0-972c-ff39858dcc47
+# ╠═28ec976a-f678-409a-b6e5-b1ffe6f29a0f
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
