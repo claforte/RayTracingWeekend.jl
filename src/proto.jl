@@ -4,33 +4,52 @@
 using Pkg
 Pkg.activate(@__DIR__)
 
-using Markdown
-using InteractiveUtils
-using Images
-using LinearAlgebra
-using StaticArrays
+using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 Option{T} = Union{Missing, T}
 Vec3 = SVector{3}
 Vec2 = SVector{2}
 Point = Vec3
 Color = Vec3
+t_col = Color(0.4, 0.5, 0.1) # test color
 
-import Base.getproperty
-function Base.getproperty(vec::SVector, sym::Symbol)
-    #  TODO: use a dictionary that maps symbols to indices, e.g. Dict(:x->1)
-    if sym in [:x, :r]
-        return vec[1]
-    elseif sym in [:y, :g]
-        return vec[2]
-    elseif sym in [:z, :b]
-        return vec[3]
-    else
-        return getfield(vec, sym)
-    end
-end
+# import Base.getproperty
+# function Base.getproperty(vec::SVector{3}, sym::Symbol)
+#     #  TODO: use a dictionary that maps symbols to indices, e.g. Dict(:x->1)
+#     if sym in [:x, :r]
+#         return vec[1]
+#     elseif sym in [:y, :g]
+#         return vec[2]
+#     elseif sym in [:z, :b]
+#         return vec[3]
+#     else
+#         return getfield(vec, sym)
+#     end
+# end
 
 squared_length(v::SVector) = v ⋅ v
+
+function test_squared_length()
+    t_col2 = Color(0.4, 0.5, 0.1)
+    squared_length(t_col2)
+end
+@btime test_squared_length()
+
+# Before optimization:
+#   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
+# inside a function:
+#   894-906 ns (43 allocations: 2.83 KiB)
+#
+# don't define `Base.getproperty(vec::SVector{3}, sym::Symbol)`
+#   208.527 ns (3 allocations: 80 bytes)
+#
+@btime squared_length(t_col)
+
 near_zero(v::SVector) = squared_length(v) < 1e-5
+
+t_col[1]# t_col.r
+t_col[2] #t_col.y
+
+
 
 # Test images
 
@@ -62,30 +81,12 @@ end
 
 gradient(200,100)
 
-# Unlike the C++ implementation:
-# - Julia uses i for row, j for column, so I inverted the C++ code's variable names.
-# - The C++ code used a Y-up coordinate system, so I used (ny-i) instead of i for the row number.
-
-# Test LinearAlgebra:
-
-[1; 1] ⋅ [2; 3]
-[0;1;0] × [0;0;1]
-t_col = Color(0.4, 0.5, 0.1) # test color
-t_col.r
-t_col.y
-
-squared_length(t_col)
-
-rgb(v::Vec3) = RGB(v.r, v.g, v.b)
-
+rgb(v::Vec3) = RGB(v...)
 rgb(t_col)
 
 rgb_gamma2(v::Vec3) = RGB(sqrt.(v)...)
 
 rgb_gamma2(t_col)
-
-
-
 
 struct Ray
 	origin::Point
@@ -101,7 +102,8 @@ end
 
 function sky_color(ray::Ray)
 	# NOTE: unlike in the C++ implementation, we normalize the ray direction.
-	t = 0.5(ray.dir.y + 1.0)
+	t = 0.5(ray.dir[2] + 1.0)
+    #t = 0.5(ray.dir.y + 1.0)
 	(1-t)*Color(1,1,1) + t*Color(0.5, 0.7, 1.0)
 end
 
@@ -251,9 +253,9 @@ struct Sphere <: Hittable
 	mat::Material
 end
 
-md"""The geometry defines an `outside normal`. A HitRecord stores the `local normal`.
-![Surface normal](https://raytracing.github.io/images/fig-1.06-normal-sides.jpg)
-"""
+# md"""The geometry defines an `outside normal`. A HitRecord stores the `local normal`.
+# ![Surface normal](https://raytracing.github.io/images/fig-1.06-normal-sides.jpg)
+# """
 
 """Equivalent to `hit_record.set_face_normal()`"""
 function ray_to_HitRecord(t, p, outward_n⃗, r_dir::Vec3, mat::Material)
@@ -432,8 +434,8 @@ clamp(3.5, 0, 1)
 
 function get_ray(c::Camera, s::Float64, t::Float64)
 	rd = Vec2(c.lens_radius * random_vec2_in_disk())
-	offset = c.u * rd.x + c.v * rd.y
-	Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
+	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
+    Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
 									 t*c.vertical - c.origin - offset))
 end
 
@@ -657,13 +659,21 @@ t_lookfrom2 = Point(13.0,2.0,3.0)
 t_lookat2 = Point(0.0,0.0,0.0)
 t_cam = default_camera(t_lookfrom2, t_lookat2, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
                         0.1, 10.0)
-render(scene_random_spheres(), t_cam, 96, 1) # took ~20s (really rough timing) in REPL, before optimization
-#render(scene_random_spheres(), t_cam, 200, n_samples=32) # took 5020s in Pluto.jl, before optimizations!
+
+# took ~20s (really rough timing) in REPL, before optimization
+# after optimization: 880.997 ms (48801164 allocations: 847.10 MiB)
+render(scene_random_spheres(), t_cam, 96, 1)
+#render(scene_random_spheres(), t_cam, 200, 32) # took 5020s in Pluto.jl, before optimizations!
 
 t_lookfrom = Point(3.0,3.0,2.0)
 t_lookat = Point(0.0,0.0,-1.0)
 dist_to_focus = norm(t_lookfrom-t_lookat)
 t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
                         2.0, dist_to_focus)
+
+# Before optimization:
+#  5.993 s (193097930 allocations: 11.92 GiB)
+# after disabling: `Base.getproperty(vec::SVector{3}, sym::Symbol)`
+#  1.001 s ( 17406437 allocations: 425.87 MiB)
 render(scene_diel_spheres(), t_cam, 96, 16)
 
