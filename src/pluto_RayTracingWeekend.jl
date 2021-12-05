@@ -568,7 +568,13 @@ function scene_blue_red_spheres()::HittableList # dielectric spheres
 end
 
 # ╔═╡ e3ef265c-1911-429d-84be-5d5174d55fa1
-md"# Spheres with depth-of- field"
+md"# Spheres with depth-of-field"
+
+# ╔═╡ 3c54cde0-6509-45e1-a4a0-26c6aa840b8e
+md"# Random spheres"
+
+# ╔═╡ 01605d3b-a576-43ac-9576-a1cf58a948e4
+#render(scene_random_spheres(), t_cam, 200, 32) # takes 5020s!
 
 # ╔═╡ 30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 md"""# Random vectors
@@ -578,6 +584,44 @@ C++'s section 8.1"""
 
 # ╔═╡ 1f4a9699-5c91-4e2c-b592-1bfa86c05959
 random_between(min=0.0, max=1.0) = rand()*(max-min) + min # equiv to random_double()
+
+# ╔═╡ a52911a2-1e24-4237-81ca-f613913d29c1
+function scene_random_spheres()::HittableList # dielectric spheres
+	spheres = Sphere[]
+
+	# ground 
+	push!(spheres, Sphere(Vec3(0,-1000,-1), 1000, Lambertian(Color(0.5,0.5,0.5))))
+
+	for a in -11:10, b in -11:10
+		choose_mat = rand()
+		center = Point(a + 0.9*rand(), 0.2, b + 0.9*rand())
+		
+		if norm(center - Point(4,0.2,0)) < 0.9 continue end # skip spheres too close?
+			
+		if choose_mat < 0.8
+			# diffuse
+			albedo = Color(rand(3)...) .* Color(rand(3)...) # TODO: random_color()
+			push!(spheres, Sphere(center, 0.2, Lambertian(albedo)))
+		elseif choose_mat < 0.95
+			# metal
+			albedo = Color(random_between(0.5,1.0), random_between(0.5,1.0),
+						   random_between(0.5,1.0)) # TODO: random_color
+			fuzz = random_between(0.0, 5.0)
+			push!(spheres, Sphere(center, 0.2, Metal(albedo, fuzz)))
+		else
+			# glass
+			push!(spheres, Sphere(center, 0.2, Dielectric(1.5)))
+		end
+	end
+
+	push!(spheres, Sphere(Point(0,1,0), 1.0, Dielectric(1.5)))
+	push!(spheres, Sphere(Point(-4,1,0), 1.0, Lambertian(Color(0.4,0.2,0.1))))
+	push!(spheres, Sphere(Point(4,1,0), 1.0, Metal(Color(0.7,0.6,0.5), 0.0)))
+	HittableList(spheres)
+end
+
+# ╔═╡ 541aa3e5-4632-4f74-8088-f08fe24e07f8
+scene_random_spheres()
 
 # ╔═╡ 795fdf6f-945e-44f8-8aa1-1e33586cc095
 random_between(50, 100)
@@ -761,6 +805,18 @@ render(scene_blue_red_spheres(), default_camera(), 96, 16)
 render(scene_diel_spheres(), default_camera(Point(-2,2,1), Point(0,0,-1),
 							 				Vec3(0,1,0), 20.0), 96, 16)
 
+# ╔═╡ 28ec976a-f678-409a-b6e5-b1ffe6f29a0f
+
+
+# ╔═╡ 840d2599-245c-4e6c-8813-4abdcd802b01
+begin
+	t_lookfrom2 = Point(13.0,2.0,3.0)
+	t_lookat2 = Point(0.0,0.0,0.0)
+	t_cam = default_camera(t_lookfrom2, t_lookat2, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
+						   0.1, 10.0)
+	render(scene_random_spheres(), t_cam, 96, 1)
+end
+
 # ╔═╡ a7d95d91-6571-4696-bad3-2979296d5f84
 begin
 	t_lookfrom = Point(3.0,3.0,2.0)
@@ -770,9 +826,6 @@ begin
 						   2.0, dist_to_focus)
 	render(scene_diel_spheres(), t_cam, 96, 16)
 end
-
-# ╔═╡ 28ec976a-f678-409a-b6e5-b1ffe6f29a0f
-
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1653,8 +1706,13 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═7c75b0d8-578d-4ca9-8d74-935c1ac582b9
 # ╠═dcde1539-23af-4abf-96d3-6a903add3ea8
 # ╠═e7f5c672-0bd9-4cfe-8a47-17cd67aa01f4
-# ╠═e3ef265c-1911-429d-84be-5d5174d55fa1
+# ╟─e3ef265c-1911-429d-84be-5d5174d55fa1
 # ╠═a7d95d91-6571-4696-bad3-2979296d5f84
+# ╟─3c54cde0-6509-45e1-a4a0-26c6aa840b8e
+# ╠═a52911a2-1e24-4237-81ca-f613913d29c1
+# ╠═541aa3e5-4632-4f74-8088-f08fe24e07f8
+# ╠═01605d3b-a576-43ac-9576-a1cf58a948e4
+# ╠═840d2599-245c-4e6c-8813-4abdcd802b01
 # ╟─30102751-fbbd-41dc-9dc1-5c7cb8cd613f
 # ╠═1f4a9699-5c91-4e2c-b592-1bfa86c05959
 # ╠═795fdf6f-945e-44f8-8aa1-1e33586cc095
