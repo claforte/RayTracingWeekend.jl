@@ -4,10 +4,13 @@
 using Pkg
 Pkg.activate(@__DIR__)
 
+MyFloat = Float64 # Float32 
+
+
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 Option{T} = Union{Missing, T}
-Vec3 = SVector{3}
-Vec2 = SVector{2}
+Vec3 = SVector{3, MyFloat}
+Vec2 = SVector{2, MyFloat}
 Point = Vec3
 Color = Vec3
 t_col = Color(0.4, 0.5, 0.1) # test color
@@ -28,12 +31,10 @@ t_col = Color(0.4, 0.5, 0.1) # test color
 #         return getfield(vec, sym)
 #     end
 # end
+# t_col[1]# t_col.r
+# t_col[2] #t_col.y
 
 squared_length(v::SVector) = v ⋅ v
-
-@btime squared_length(t_col)
-
-squared_length(Color(0.4, 0.5, 0.1))
 
 # Before optimization:
 #   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
@@ -45,14 +46,19 @@ squared_length(Color(0.4, 0.5, 0.1))
 #
 # just test `@btime squared_length(t_col)`:
 #    12.115 ns (1 allocation: 16 bytes)
-#
+# test again after redefining: `Vec3 = SVector{3, Float64}` instead of `Vec3 = SVector{3}`
+#    11.966 ns (1 allocation: 16 bytes)
+# test again after redefining: `Vec3 = SVector{3, Float32}` instead of `Vec3 = SVector{3, Float64}`
+#    13.652 ns (1 allocation: 16 bytes)
+#    (SLOWER! I wonder if this would hold with larger vectors or if we become mem-bound) 
 @btime squared_length(t_col)
 
+# reports no allocation:
+time_squared_length(x) = @time squared_length(x)
+time_squared_length(t_col)
+
 near_zero(v::SVector) = squared_length(v) < 1e-5
-
-t_col[1]# t_col.r
-t_col[2] #t_col.y
-
+@btime near_zero(t_col - t_col) # 23.468 ns (1 allocation: 32 bytes)
 
 
 # Test images
@@ -98,9 +104,17 @@ struct Ray
 end
 
 # equivalent to C++'s ray.at()
-function point(r::Ray, t::AbstractFloat)::Point # point at parameter t
+
+# before optimization:
+#
+# function point(r::Ray, t::AbstractFloat)::Point # point at parameter t
+# 	r.origin .+ t .* r.dir
+# end
+
+function point(r::Ray, t::Float64)::Point # point at parameter t
 	r.origin .+ t .* r.dir
 end
+
 
 #md"# Chapter 4: Rays, simple camera, and background"
 
@@ -115,6 +129,16 @@ end
 rgb(Color(0.5, 0.7, 1.0)), rgb(Color(1.0, 1.0, 1.0))
 
 rgb(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
+
+# before optimization: @btime rgb(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
+#   1.164 μs (19 allocations: 560 bytes)
+# test without rgb: `sky_color(Ray(Point(0,0,0), Vec3(0,-1,0)))`
+#   1.136 μs (18 allocations: 528 bytes)
+# test w/o sky_color: `Ray(Point(0,0,0), Vec3(0,-1,0))`
+#   509.135 ns (7 allocations: 224 bytes)
+# test after forcing Float64 instead of AbstractFloat in Ray()...
+#   308.289 ns (4 allocations: 128 bytes)
+@btime Ray(Point(0,0,0), Vec3(0,-1,0))
 
 # md"""# Random vectors
 # C++'s section 8.1"""
@@ -676,8 +700,10 @@ t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
                         2.0, dist_to_focus)
 
 # Before optimization:
-#  5.993 s (193097930 allocations: 11.92 GiB)
+#  5.993 s  (193097930 allocations: 11.92 GiB)
 # after disabling: `Base.getproperty(vec::SVector{3}, sym::Symbol)`
-#  1.001 s ( 17406437 allocations: 425.87 MiB)
-render(scene_diel_spheres(), t_cam, 96, 16)
+#  1.001 s  ( 17406437 allocations: 425.87 MiB)
+# after forcing Ray and point() to use Float64 instead of AbstractFloat:
+#  397.905 ms (6269207 allocations: 201.30 MiB)
+@btime render(scene_diel_spheres(), t_cam, 96, 16)
 
