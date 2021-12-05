@@ -12,6 +12,9 @@ Point = Vec3
 Color = Vec3
 t_col = Color(0.4, 0.5, 0.1) # test color
 
+# claforte: This was meant to be a convenient function to get some_vec.x or some_color.r,
+# but this causes ~41 allocations per call, so this become a huge bottleneck.
+#
 # import Base.getproperty
 # function Base.getproperty(vec::SVector{3}, sym::Symbol)
 #     #  TODO: use a dictionary that maps symbols to indices, e.g. Dict(:x->1)
@@ -28,11 +31,9 @@ t_col = Color(0.4, 0.5, 0.1) # test color
 
 squared_length(v::SVector) = v ⋅ v
 
-function test_squared_length()
-    t_col2 = Color(0.4, 0.5, 0.1)
-    squared_length(t_col2)
-end
-@btime test_squared_length()
+@btime squared_length(t_col)
+
+squared_length(Color(0.4, 0.5, 0.1))
 
 # Before optimization:
 #   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
@@ -41,6 +42,9 @@ end
 #
 # don't define `Base.getproperty(vec::SVector{3}, sym::Symbol)`
 #   208.527 ns (3 allocations: 80 bytes)
+#
+# just test `@btime squared_length(t_col)`:
+#    12.115 ns (1 allocation: 16 bytes)
 #
 @btime squared_length(t_col)
 
