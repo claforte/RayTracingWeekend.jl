@@ -4,7 +4,7 @@
 using Pkg
 Pkg.activate(@__DIR__)
 
-MyFloat = Float64 # Float32 
+MyFloat = Float32 # Float64 
 
 
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
@@ -13,7 +13,7 @@ Vec3 = SVector{3, MyFloat}
 Vec2 = SVector{2, MyFloat}
 Point = Vec3
 Color = Vec3
-t_col = Color(0.4, 0.5, 0.1) # test color
+t_col = Color(0.4f0, 0.5f0, 0.1f0) # test color
 
 # claforte: This was meant to be a convenient function to get some_vec.x or some_color.r,
 # but this causes ~41 allocations per call, so this become a huge bottleneck.
@@ -91,10 +91,10 @@ end
 
 gradient(200,100)
 
-rgb(v::Vec3) = RGB(v...)
+rgb(v::Vec3) = RGB{MyFloat}(v...)
 rgb(t_col)
 
-rgb_gamma2(v::Vec3) = RGB(sqrt.(v)...)
+rgb_gamma2(v::Vec3) = RGB{MyFloat}(sqrt.(v)...)
 
 rgb_gamma2(t_col)
 
@@ -111,24 +111,30 @@ end
 # 	r.origin .+ t .* r.dir
 # end
 
-function point(r::Ray, t::Float64)::Point # point at parameter t
+function point(r::Ray, t::MyFloat)::Point # point at parameter t
 	r.origin .+ t .* r.dir
 end
 
-
 #md"# Chapter 4: Rays, simple camera, and background"
 
-function sky_color(ray::Ray)
-	# NOTE: unlike in the C++ implementation, we normalize the ray direction.
-	t = 0.5(ray.dir[2] + 1.0)
+typeof(MyFloat(1.0))
+typeof(1.0f0)
+
+function sky_color(ray::Ray)::Color
+	# NOTE: unlike in the C++ implementation, the ray direction is normalized beforehand.
+	t = 0.5f0(ray.dir[2] + 1.0f0)
     #t = 0.5(ray.dir.y + 1.0)
-	(1-t)*Color(1,1,1) + t*Color(0.5, 0.7, 1.0)
+	res = (1.0f0-t)*Color(1.0f0,1.0f0,1.0f0) + t*Color(0.5f0, 0.7f0, 1.0f0)
+    res
 end
 
 # interpolates between blue and white
-rgb(Color(0.5, 0.7, 1.0)), rgb(Color(1.0, 1.0, 1.0))
+p_zero = Point(0.0f0,0.0f0,0.0f0) 
+v3_minusY = Vec3(0.0f0,-1.0f0,0.0f0)
 
-rgb(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
+
+rgb(Color(0.5, 0.7, 1.0)), rgb(Color(1.0, 1.0, 1.0))
+rgb(sky_color(Ray(Point(0.0,0.0,0.0), Vec3(0.0,-1.0,0.0))))
 
 # before optimization: @btime rgb(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
 #   1.164 μs (19 allocations: 560 bytes)
@@ -138,21 +144,28 @@ rgb(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
 #   509.135 ns (7 allocations: 224 bytes)
 # test after forcing Float64 instead of AbstractFloat in Ray()...
 #   308.289 ns (4 allocations: 128 bytes)
-@btime Ray(Point(0,0,0), Vec3(0,-1,0))
+# test after forcing every Float64 to Float32:
+#   333.710 ns (4 allocations: 128 bytes)
+# test after forcing every input to Float32: `@btime Ray(Point(0.0f0,0.0f0,0.0f0), Vec3(0.0f0,-1.0f0,0.0f0))`
+#   294.919 ns (4 allocations: 128 bytes)
+# test allocate outside, i.e.: `@btime Ray(p_zero, v3_minusY)`
+#     9.858 ns (0 allocations: 0 bytes)
+#
+@btime Ray(p_zero, v3_minusY)
 
 # md"""# Random vectors
 # C++'s section 8.1"""
 
-random_between(min=0.0, max=1.0) = rand()*(max-min) + min # equiv to random_double()
-#random_between(50, 100)
+random_between(min=0.0f0, max=1.0f0) = rand()*(max-min) + min # equiv to random_double()
+@btime random_between(50, 100) # 4.399 ns (0 allocations: 0 bytes)
 
 #[random_between(50.0, 100.0) for i in 1:3]
 
-function random_vec3(min=0.0, max=1.0)
+function random_vec3(min=0.0f0, max=1.0f0)
 	Vec3([random_between(min, max) for i in 1:3]...)
 end
 
-random_vec3(-1,1)
+@btime random_vec3(-1.0f0,1.0f0)
 
 function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
 	while (true)
@@ -167,7 +180,9 @@ squared_length(random_vec3_in_sphere())
 
 "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
 random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
-random_vec3_on_sphere()
+
+# TO OPTIMIZE!
+@btime random_vec3_on_sphere() # 517.538 ns (12 allocations: 418 bytes)... but random
 norm(random_vec3_on_sphere())
 
 function random_vec2_in_disk() :: Vec2 # equiv to random_in_unit_disk()
@@ -191,7 +206,7 @@ function main(nx::Int, ny::Int, scene)
 	vertical = Vec3(0, 2, 0)
 	origin = Point(0, 0, 0)
 	
-	img = zeros(RGB, ny, nx)
+	img = zeros(RGB{MyFloat}, ny, nx)
 	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
 		u = j/nx
 		v = (ny-i)/ny # Y-up!
@@ -204,7 +219,7 @@ function main(nx::Int, ny::Int, scene)
 	img
 end
 
-main(200,100, sky_color)
+main(200,100, sky_color) # TO OPTIMIZE! 28.630 ms (520010 allocations: 13.05 MiB)
 
 #md"# Chapter 5: Add a sphere"
 
@@ -243,11 +258,11 @@ function hit_sphere2(center::Vec3, radius::AbstractFloat, r::Ray)
 end
 
 function sphere_scene2(r::Ray)
-	sphere_center = Vec3(0,0,-1)
-	t = hit_sphere2(sphere_center, 0.5, r) # sphere of radius 0.5 centered at z=-1
-	if t > 0
+	sphere_center = Vec3(0f0,0f0,-1f0)
+	t = hit_sphere2(sphere_center, 0.5f0, r) # sphere of radius 0.5 centered at z=-1
+	if t > 0f0
 		n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
-		return 0.5n⃗ + Vec3(0.5,0.5,0.5) # remap normal to rgb
+		return 0.5f0n⃗ + Vec3(0.5f0,0.5f0,0.5f0) # remap normal to rgb
 	else
 		sky_color(r)
 	end
@@ -265,7 +280,7 @@ abstract type Material end
 mutable struct HitRecord
 	# claforte: Not sure if this needs to be mutable... might impact performance!
 
-	t::Float64 # vector from the ray's origin to the intersection with a surface
+	t::MyFloat # vector from the ray's origin to the intersection with a surface
 	p::Vec3 # point of the intersection between an object's surface and a ray
 	n⃗::Vec3 # surface's outward normal vector, points towards outside of object?
 	
@@ -277,7 +292,7 @@ end
 
 struct Sphere <: Hittable
 	center::Vec3
-	radius::Float64
+	radius::MyFloat
 	mat::Material
 end
 
@@ -331,7 +346,7 @@ function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
 	return Scatter(scattered_r, attenuation)
 end
 
-function hit(s::Sphere, r::Ray, tmin::Float64, tmax::Float64)::Option{HitRecord}
+function hit(s::Sphere, r::Ray, tmin::MyFloat, tmax::MyFloat)::Option{HitRecord}
     oc = r.origin - s.center
     a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
     half_b = oc ⋅ r.dir
@@ -360,8 +375,8 @@ struct HittableList <: Hittable
 end
 
 #"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
-function hit(hittables::HittableList, r::Ray, tmin::Float64,
-			 tmax::Float64)::Option{HitRecord}
+function hit(hittables::HittableList, r::Ray, tmin::MyFloat,
+			 tmax::MyFloat)::Option{HitRecord}
     closest = tmax # closest t so far
     rec = missing
     for h in hittables.list
@@ -380,7 +395,7 @@ color_vec3_in_rgb(v::Vec3) = 0.5normalize(v) + Vec3(0.5,0.5,0.5)
 
 mutable struct Metal<:Material
 	albedo::Color
-	fuzz::Float64 # how big the sphere used to generate fuzzy reflection rays. 0=none
+	fuzz::MyFloat # how big the sphere used to generate fuzzy reflection rays. 0=none
 	Metal(a,f=0.0) = new(a,f)
 end
 
@@ -427,7 +442,7 @@ mutable struct Camera
 	u::Vec3
 	v::Vec3
 	w::Vec3
-	lens_radius::Float64
+	lens_radius::MyFloat
 end
 
 """
@@ -436,10 +451,10 @@ end
 		aspect_ratio: horizontal/vertical ratio of pixels
       aperture: if 0 - no depth-of-field
 """
-function default_camera(lookfrom::Point=Point(0,0,0), lookat::Point=Point(0,0,-1), 
-						vup::Vec3=Vec3(0,1,0), vfov=90.0, aspect_ratio=16.0/9.0,
-						aperture=0.0, focus_dist=1.0)
-	viewport_height = 2.0 * tand(vfov/2)
+function default_camera(lookfrom::Point=Point(0f0,0f0,0f0), lookat::Point=Point(0f0,0f0,-1f0), 
+						vup::Vec3=Vec3(0f0,1f0,0f0), vfov=90.0f0, aspect_ratio=16.0f0/9.0f0,
+						aperture=0.0f0, focus_dist=1.0f0)
+	viewport_height = 2.0f0 * tand(vfov/2f0)
 	viewport_width = aspect_ratio * viewport_height
 	
 	w = normalize(lookfrom - lookat)
@@ -449,8 +464,8 @@ function default_camera(lookfrom::Point=Point(0,0,0), lookat::Point=Point(0,0,-1
 	origin = lookfrom
 	horizontal = focus_dist * viewport_width * u
 	vertical = focus_dist * viewport_height * v
-	lower_left_corner = origin - horizontal/2 - vertical/2 - focus_dist*w
-	lens_radius = aperture/2
+	lower_left_corner = origin - horizontal/2f0 - vertical/2f0 - focus_dist*w
+	lens_radius = aperture/2f0
 	Camera(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius)
 end
 
@@ -460,14 +475,14 @@ clamp(3.5, 0, 1)
 
 #md"# Render
 
-function get_ray(c::Camera, s::Float64, t::Float64)
+function get_ray(c::Camera, s::MyFloat, t::MyFloat)
 	rd = Vec2(c.lens_radius * random_vec2_in_disk())
 	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
 									 t*c.vertical - c.origin - offset))
 end
 
-get_ray(default_camera(), 0.0, 0.0)
+get_ray(default_camera(), 0.0f0, 0.0f0)
 
 """Compute color for a ray, recursively
 
@@ -478,7 +493,7 @@ function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
 		return Vec3(0,0,0)
 	end
 		
-	rec = hit(world, r, 1e-4, Inf)
+	rec = hit(world, r, 1f-4, Inf32)
     if !ismissing(rec)
 		# For debugging, represent vectors as RGB:
 		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
@@ -514,25 +529,25 @@ end
 function render(scene::HittableList, cam::Camera, image_width=400,
 				n_samples=1)
 	# Image
-	aspect_ratio = 16.0/9.0 # TODO: use cam.aspect_ratio for consistency
+	aspect_ratio = 16.0f0/9.0f0 # TODO: use cam.aspect_ratio for consistency
 	image_height = convert(Int64, floor(image_width / aspect_ratio))
 
 	# Render
-	img = zeros(RGB, image_height, image_width)
+	img = zeros(RGB{MyFloat}, image_height, image_width)
 	# Compared to C++, Julia is:
 	# 1. column-major, i.e. iterate 1 column at a time, so invert i,j compared to C++
 	# 2. 1-based, so no need to subtract 1 from image_width, etc.
 	# 3. The array is Y-down, but `v` is Y-up 
 	for i in 1:image_height, j in 1:image_width
-		accum_color = Vec3(0,0,0)
+		accum_color = Vec3(0f0,0f0,0f0)
 		for s in 1:n_samples
-			u = j/image_width
-			v = (image_height-i)/image_height # i is Y-down, v is Y-up!
+			u = MyFloat(j/image_width)
+			v = MyFloat((image_height-i)/image_height) # i is Y-down, v is Y-up!
 			if s != 1 # 1st sample is always centered, for 1-sample/pixel
 				# claforte: I think the C++ version had a bug, the rand offset was
 				# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-				u += (rand()-0.5) / image_width
-				v += (rand()-0.5) / image_height
+				u += MyFloat((rand()-0.5f0) / image_width)
+				v += MyFloat((rand()-0.5f0) / image_height)
 			end
 			ray = get_ray(cam, u, v)
 			accum_color += ray_color(ray, scene)
@@ -559,26 +574,26 @@ render(scene_4_spheres(), default_camera(), 96, 16)
 # 	Args:
 # 		refraction_ratio: incident refraction index divided by refraction index of 
 # 			hit surface. i.e. η/η′ in the figure above"""
-function refract(dir::Vec3, n⃗::Vec3, refraction_ratio::Float64)
+function refract(dir::Vec3, n⃗::Vec3, refraction_ratio::MyFloat)
 	cosθ = min(-dir ⋅ n⃗, 1)
 	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
 	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗
 	normalize(r_out_perp + r_out_parallel)
 end
 
-@assert refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 1.0) == Vec3(0.6,-0.8,0) # unchanged
+@assert refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 1.0f0) == Vec3(0.6,-0.8,0) # unchanged
 
-t_refract_widerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 2.0) # wider angle
+t_refract_widerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 2.0f0) # wider angle
 @assert isapprox(t_refract_widerθ, Vec3(0.87519, -0.483779, 0.0); atol=1e-3)
 
-t_refract_narrowerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 0.5) # narrower angle
+t_refract_narrowerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 0.5f0) # narrower angle
 @assert isapprox(t_refract_narrowerθ, Vec3(0.3, -0.953939, 0.0); atol=1e-3)
 
 mutable struct Dielectric <: Material
-	ir::Float64 # index of refraction, i.e. η.
+	ir::MyFloat # index of refraction, i.e. η.
 end
 
-function reflectance(cosθ::Float64, refraction_ratio::Float64)
+function reflectance(cosθ::MyFloat, refraction_ratio::MyFloat)
 	# Use Schlick's approximation for reflectance.
 	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
 	r0 = (1-refraction_ratio) / (1+refraction_ratio)
@@ -588,9 +603,9 @@ end
 
 function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
 	attenuation = Color(1,1,1)
-	refraction_ratio = rec.front_face ? (1.0/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
-	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0)
-	sinθ = √(1.0 - cosθ^2)
+	refraction_ratio = rec.front_face ? (1.0f0/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
+	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0f0)
+	sinθ = √(1.0f0 - cosθ^2)
 	cannot_refract = refraction_ratio * sinθ > 1.0
 	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand()
 		dir = reflect(r_in.dir, rec.n⃗)
@@ -705,5 +720,7 @@ t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
 #  1.001 s  ( 17406437 allocations: 425.87 MiB)
 # after forcing Ray and point() to use Float64 instead of AbstractFloat:
 #  397.905 ms (6269207 allocations: 201.30 MiB)
+# after forcing use of Float32 instead of Float64:
+#  487.680 ms (7128113 allocations: 196.89 MiB) # More allocations... something is causing them...
 @btime render(scene_diel_spheres(), t_cam, 96, 16)
 
