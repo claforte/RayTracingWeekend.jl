@@ -10,7 +10,9 @@ MyFloat = Float32 # Float64
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 Option{T} = Union{Missing, T}
 Vec3 = SVector{3, MyFloat}
+MVec3 = MVector{3, MyFloat}
 Vec2 = SVector{2, MyFloat}
+MVec2 = MVector{2, MyFloat}
 Point = Vec3
 Color = Vec3
 t_col = Color(0.4f0, 0.5f0, 0.1f0) # test color
@@ -157,32 +159,65 @@ rgb(sky_color(Ray(Point(0.0,0.0,0.0), Vec3(0.0,-1.0,0.0))))
 # C++'s section 8.1"""
 
 random_between(min=0.0f0, max=1.0f0) = rand()*(max-min) + min # equiv to random_double()
-@btime random_between(50, 100) # 4.399 ns (0 allocations: 0 bytes)
+@btime random_between(50f0, 100f0) # 4.399 ns (0 allocations: 0 bytes)
 
-#[random_between(50.0, 100.0) for i in 1:3]
-
-function random_vec3(min=0.0f0, max=1.0f0)
-	Vec3([random_between(min, max) for i in 1:3]...)
+# TODO: get rid of this inefficient function...?
+function random_vec3(min::MyFloat, max::MyFloat)
+	# Initial implementation (causes 6 allocations):
+	# Vec3([random_between(min, max) for i in 1:3]...)
+	Vec3(random_between(min, max), random_between(min, max), random_between(min, max)) # 5 allocations
 end
 
-@btime random_vec3(-1.0f0,1.0f0)
+@btime (random_between(-1f0, 1f0), random_between(-1f0, 1f0), random_between(-1f0, 1f0)) # 10.902 ns (0 allocations: 0 bytes)
 
-function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
-	while (true)
-		p = random_vec3(-1,1)
-		if squared_length(p) <= 1
-			return p
-		end
+# Before optimization:
+#   352.322 ns (6 allocations: 224 bytes)
+# Don't use list comprehension:
+#   179.684 ns (5 allocations: 112 bytes)
+@btime random_vec3(-1.0f0,1.0f0);
+
+function random_vec3!(v::MVec3, min::MyFloat, max::MyFloat)
+	for i in 1:3 
+		v[i] = random_between(min, max)
+	end
+end
+# claforte: ugly code... surely there's a better way...
+function random_vec2!(v::MVec2, min::MyFloat, max::MyFloat)
+	for i in 1:2 
+		v[i] = random_between(min, max)
 	end
 end
 
+_rand_vec3 = MVec3(0f0,0f0,0f0)
+_rand_vec2 = MVec2(0f0,0f0)
+@btime random_vec3!(_rand_vec3, -1f0, 1f0) # 13.158 ns (0 allocations: 0 bytes)
+@btime random_vec2!(_rand_vec2, -1f0, 1f0) # 10.971 ns (0 allocations: 0 bytes)
+
+function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
+	while (true)
+		random_vec3!(_rand_vec3, -1f0, 1f0)
+		if _rand_vec3⋅_rand_vec3  <= 1
+			# Need to make a copy, otherwise multiple references to the scratch pad will be used as if they were independent!
+			return Vec3(_rand_vec3)
+		end
+	end
+end
+@btime random_vec3_in_sphere() # after optim: 71.525 ns (1 allocation: 28 bytes)
+
+a = random_vec3_in_sphere()
+b = random_vec3_in_sphere()
+a
+b
 squared_length(random_vec3_in_sphere())
 
 "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
 random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
 
-# TO OPTIMIZE!
-@btime random_vec3_on_sphere() # 517.538 ns (12 allocations: 418 bytes)... but random
+# Before optim:
+#   517.538 ns (12 allocations: 418 bytes)... but random
+# After reusing _rand_vec3:
+#    92.865 ns (2 allocations: 60 bytes)
+random_vec3_on_sphere()
 norm(random_vec3_on_sphere())
 
 function random_vec2_in_disk() :: Vec2 # equiv to random_in_unit_disk()
@@ -704,9 +739,19 @@ t_cam = default_camera(t_lookfrom2, t_lookat2, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0
                         0.1, 10.0)
 
 # took ~20s (really rough timing) in REPL, before optimization
-# after optimization: 880.997 ms (48801164 allocations: 847.10 MiB)
-render(scene_random_spheres(), t_cam, 96, 1)
-#render(scene_random_spheres(), t_cam, 200, 32) # took 5020s in Pluto.jl, before optimizations!
+# after optimization: 
+#   880.997 ms (48801164 allocations: 847.10 MiB)
+# after switching to Float32 + reducing allocations using rand_vec3!(): 
+#    79.574 ms (  542467 allocations:  14.93 MiB)
+@time render(scene_random_spheres(), t_cam, 96, 1)
+
+# took 5020s in Pluto.jl, before optimizations!
+# after lots of optimizations, up to switching to Float32 + reducing allocations using rand_vec3!(): 
+#   10.862032 seconds (70.09 M allocations: 1.858 GiB, 1.53% gc time)
+@time render(scene_random_spheres(), t_cam, 200, 32)
+
+@time render(scene_random_spheres(), t_cam, 1920, 1000)
+
 
 t_lookfrom = Point(3.0,3.0,2.0)
 t_lookat = Point(0.0,0.0,-1.0)
@@ -722,5 +767,7 @@ t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
 #  397.905 ms (6269207 allocations: 201.30 MiB)
 # after forcing use of Float32 instead of Float64:
 #  487.680 ms (7128113 allocations: 196.89 MiB) # More allocations... something is causing them...
-@btime render(scene_diel_spheres(), t_cam, 96, 16)
+# after optimizing rand_vec3!/rand_vec2! to minimize allocations:
+#  423.468 ms (6075725 allocations: 158.92 MiB)
+@time render(scene_diel_spheres(), t_cam, 96, 16)
 
