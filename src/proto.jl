@@ -15,10 +15,11 @@ Vec2 = SVector{2, MyFloat}
 MVec2 = MVector{2, MyFloat}
 Point = Vec3
 Color = Vec3
-t_col = Color(0.4f0, 0.5f0, 0.1f0) # test color
+t_col = @SVector[0.4f0, 0.5f0, 0.1f0] # test color
 
 # claforte: This was meant to be a convenient function to get some_vec.x or some_color.r,
 # but this causes ~41 allocations per call, so this become a huge bottleneck.
+# TODO: replace by a lens? i.e. see https://youtu.be/vkAOYeTpLg0?t=426
 #
 # import Base.getproperty
 # function Base.getproperty(vec::SVector{3}, sym::Symbol)
@@ -36,7 +37,7 @@ t_col = Color(0.4f0, 0.5f0, 0.1f0) # test color
 # t_col[1]# t_col.r
 # t_col[2] #t_col.y
 
-squared_length(v::SVector) = v ⋅ v
+squared_length(v::SVector{3,MyFloat}) = v ⋅ v
 
 # Before optimization:
 #   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
@@ -53,15 +54,14 @@ squared_length(v::SVector) = v ⋅ v
 # test again after redefining: `Vec3 = SVector{3, Float32}` instead of `Vec3 = SVector{3, Float64}`
 #    13.652 ns (1 allocation: 16 bytes)
 #    (SLOWER! I wonder if this would hold with larger vectors or if we become mem-bound) 
-@btime squared_length(t_col)
+# replace: squared_length(v::SVector{3,MyFloat})
+#     3.256 ns (0 allocations: 0 bytes)
+# replace: @btime squared_length($t_col) # notice the $
+#     1.152 ns (0 allocations: 0 bytes)
+@btime squared_length($t_col)
 
-# reports no allocation:
-time_squared_length(x) = @time squared_length(x)
-time_squared_length(t_col)
-
-near_zero(v::SVector) = squared_length(v) < 1e-5
-@btime near_zero(t_col - t_col) # 23.468 ns (1 allocation: 32 bytes)
-
+near_zero(v::SVector{3,MyFloat}) = squared_length(v) < 1e-5
+@btime near_zero($t_col) # 1.382 ns (0 allocations: 0 bytes)
 
 # Test images
 
@@ -93,17 +93,25 @@ end
 
 gradient(200,100)
 
-rgb(v::Vec3) = RGB{MyFloat}(v...)
-rgb(t_col)
+rgb(v::SVector{3,MyFloat}) = RGB{MyFloat}(v[1], v[2], v[3])
+#rgb(v::Vec3) = RGB{MyFloat}(v...)
+@btime rgb($t_col) # 289.914 ns (4 allocations: 80 bytes)
 
-rgb_gamma2(v::Vec3) = RGB{MyFloat}(sqrt.(v)...)
+rgb_gamma2(v::SVector{3,MyFloat}) = RGB{MyFloat}(sqrt.(v)...)
 
-rgb_gamma2(t_col)
+@btime rgb_gamma2($t_col) # 454.766 ns (11 allocations: 256 bytes)
 
 struct Ray
-	origin::Point
-	dir::Vec3 # direction (unit vector)
+	origin::SVector{3, MyFloat} # Point 
+	dir::SVector{3, MyFloat} # Vec3 # direction (unit vector)
 end
+
+# interpolates between blue and white
+p_zero = @SVector[0.0f0,0.0f0,0.0f0]
+v3_minusY = @SVector[0.0f0,-1.0f0,0.0f0]
+t_ray1 = Ray(p_zero, v3_minusY)
+@btime Ray($p_zero, $v3_minusY) # 6.341 ns (0 allocations: 0 bytes)
+
 
 # equivalent to C++'s ray.at()
 
@@ -113,122 +121,113 @@ end
 # 	r.origin .+ t .* r.dir
 # end
 
-function point(r::Ray, t::MyFloat)::Point # point at parameter t
+function point(r::Ray, t::MyFloat)
 	r.origin .+ t .* r.dir
 end
 
+@btime point($t_ray1, 0.5f0) # 1.392 ns (0 allocations: 0 bytes)
+
 #md"# Chapter 4: Rays, simple camera, and background"
 
-typeof(MyFloat(1.0))
-typeof(1.0f0)
-
-function sky_color(ray::Ray)::Color
-	# NOTE: unlike in the C++ implementation, the ray direction is normalized beforehand.
+function skycolor(ray::Ray)
+	white = @SVector[1.0f0,1.0f0,1.0f0]
+	skyblue = @SVector[0.5f0,0.7f0,1.0f0]
 	t = 0.5f0(ray.dir[2] + 1.0f0)
-    #t = 0.5(ray.dir.y + 1.0)
-	res = (1.0f0-t)*Color(1.0f0,1.0f0,1.0f0) + t*Color(0.5f0, 0.7f0, 1.0f0)
-    res
+    (1.0f0-t)*white + t*skyblue
 end
+@btime skycolor($t_ray1) # 1.402 ns (0 allocations: 0 bytes)
 
-# interpolates between blue and white
-p_zero = Point(0.0f0,0.0f0,0.0f0) 
-v3_minusY = Vec3(0.0f0,-1.0f0,0.0f0)
-
-
-rgb(Color(0.5, 0.7, 1.0)), rgb(Color(1.0, 1.0, 1.0))
-rgb(sky_color(Ray(Point(0.0,0.0,0.0), Vec3(0.0,-1.0,0.0))))
-
-# before optimization: @btime rgb(sky_color(Ray(Point(0,0,0), Vec3(0,-1,0))))
-#   1.164 μs (19 allocations: 560 bytes)
-# test without rgb: `sky_color(Ray(Point(0,0,0), Vec3(0,-1,0)))`
-#   1.136 μs (18 allocations: 528 bytes)
-# test w/o sky_color: `Ray(Point(0,0,0), Vec3(0,-1,0))`
-#   509.135 ns (7 allocations: 224 bytes)
-# test after forcing Float64 instead of AbstractFloat in Ray()...
-#   308.289 ns (4 allocations: 128 bytes)
-# test after forcing every Float64 to Float32:
-#   333.710 ns (4 allocations: 128 bytes)
-# test after forcing every input to Float32: `@btime Ray(Point(0.0f0,0.0f0,0.0f0), Vec3(0.0f0,-1.0f0,0.0f0))`
-#   294.919 ns (4 allocations: 128 bytes)
-# test allocate outside, i.e.: `@btime Ray(p_zero, v3_minusY)`
-#     9.858 ns (0 allocations: 0 bytes)
-#
-@btime Ray(p_zero, v3_minusY)
+# before optim: 
+#   1.474 μs (23 allocations: 608 bytes)
+# pre-allocate args:
+#   1.150 μs (19 allocations: 480 bytes)
+# `rgb(skycolor(t_ray1))`
+#   1.143 μs (19 allocations: 480 bytes)
+# `skycolor(t_ray1)`:
+#       636.259 ns (9 allocations: 256 bytes)
+#    extract t_white and t_skyblue from skycolor():
+#       279.779 ns (5 allocations: 128 bytes)
+#    pre-allocate the ray given in argument:
+#        51.130 ns (5 allocations: 128 bytes)
+#    skycolor!($t_col2, $t_ray1, $t_white, $t_skyblue) using @set to return the value:
+#        14.727 ns (1 allocation: 32 bytes)
+#    replace all the Color() by @SVector[...], don't use global colors (use local)
+#         1.402 ns (0 allocations: 0 bytes)
+# restore the rgb(), i.e. `@btime rgb(skycolor($t_ray1))`
+#   291.492 ns (4 allocations: 80 bytes)
+@btime rgb(skycolor($t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
 
 # md"""# Random vectors
 # C++'s section 8.1"""
 
-random_between(min=0.0f0, max=1.0f0) = rand()*(max-min) + min # equiv to random_double()
-@btime random_between(50f0, 100f0) # 4.399 ns (0 allocations: 0 bytes)
+# rand(Float32) seems much slower... try this instead:
+# from https://github.com/JuliaLang/julia/issues/3804
+import Base.UInt32
+# function rand_float32()
+#     a = rand(UInt32)
+#     shift = UInt32(leading_zeros(a)+1)
+#     b = shift > 0x00000009 ? (rand(Uint32) >> (32-(shift-9))) : zero(UInt32)
+#     reinterpret(Float32, (0x0000007f $ shift)<<23 | (b > zero(UInt32) ? (a << (shift-9) | b) :  a >> (9-shift)) & 0x007FFFFF)
+# end
+# @btime rand_float32() # doesn't work because of $... the language probably changed since 2013...
 
-# TODO: get rid of this inefficient function...?
-function random_vec3(min::MyFloat, max::MyFloat)
-	# Initial implementation (causes 6 allocations):
-	# Vec3([random_between(min, max) for i in 1:3]...)
-	Vec3(random_between(min, max), random_between(min, max), random_between(min, max)) # 5 allocations
+@btime rand(Float32)
+
+random_between(min=0.0f0, max=1.0f0) = rand(Float32)*(max-min) + min # equiv to random_double()
+@btime random_between(50f0, 100f0) # 4.519 ns (0 allocations: 0 bytes)
+
+function random_vec3(min::Float32, max::Float32)
+	@SVector[random_between(min, max) for i in 1:3]
 end
-
-@btime (random_between(-1f0, 1f0), random_between(-1f0, 1f0), random_between(-1f0, 1f0)) # 10.902 ns (0 allocations: 0 bytes)
 
 # Before optimization:
 #   352.322 ns (6 allocations: 224 bytes)
 # Don't use list comprehension:
 #   179.684 ns (5 allocations: 112 bytes)
-@btime random_vec3(-1.0f0,1.0f0);
+# Return @SVector[] instead of Vec3():
+#    12.557 ns (0 allocations: 0 bytes)
+@btime random_vec3(-1.0f0,1.0f0)
 
-function random_vec3!(v::MVec3, min::MyFloat, max::MyFloat)
-	for i in 1:3 
-		v[i] = random_between(min, max)
-	end
+function random_vec2(min::Float32, max::Float32)
+	@SVector[random_between(min, max) for i in 1:2]
 end
-# claforte: ugly code... surely there's a better way...
-function random_vec2!(v::MVec2, min::MyFloat, max::MyFloat)
-	for i in 1:2 
-		v[i] = random_between(min, max)
-	end
-end
-
-_rand_vec3 = MVec3(0f0,0f0,0f0)
-_rand_vec2 = MVec2(0f0,0f0)
-@btime random_vec3!(_rand_vec3, -1f0, 1f0) # 13.158 ns (0 allocations: 0 bytes)
-@btime random_vec2!(_rand_vec2, -1f0, 1f0) # 10.971 ns (0 allocations: 0 bytes)
+@btime random_vec2(-1.0f0,1.0f0) # 8.536 ns (0 allocations: 0 bytes)
 
 function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
 	while (true)
-		random_vec3!(_rand_vec3, -1f0, 1f0)
-		if _rand_vec3⋅_rand_vec3  <= 1
+		p = random_vec3(-1f0, 1f0)
+		if p⋅p <= 1
 			# Need to make a copy, otherwise multiple references to the scratch pad will be used as if they were independent!
-			return Vec3(_rand_vec3)
+			return p
 		end
 	end
 end
-@btime random_vec3_in_sphere() # after optim: 71.525 ns (1 allocation: 28 bytes)
+@btime random_vec3_in_sphere() # 46.587 ns (0 allocations: 0 bytes)
 
-a = random_vec3_in_sphere()
-b = random_vec3_in_sphere()
-a
-b
 squared_length(random_vec3_in_sphere())
 
 "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
 random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
+@btime random_vec3_on_sphere()
 
 # Before optim:
 #   517.538 ns (12 allocations: 418 bytes)... but random
 # After reusing _rand_vec3:
 #    92.865 ns (2 allocations: 60 bytes)
+# Various speed-ups (don't use Vec3, etc.): 
+#    52.427 ns (0 allocations: 0 bytes)
 random_vec3_on_sphere()
 norm(random_vec3_on_sphere())
 
-function random_vec2_in_disk() :: Vec2 # equiv to random_in_unit_disk()
+function random_vec2_in_disk() # equiv to random_in_unit_disk()
 	while (true)
-		p = Vec2(rand(2)...)
-		if squared_length(p) <= 1
+		p = random_vec2(-1f0, 1f0)
+		if p⋅p <= 1
 			return p
 		end
 	end
 end
-
+@btime random_vec2_in_disk() # 16.725 ns (0 allocations: 0 bytes)
 
 """ Temporary function to shoot rays through each pixel. Later replaced by `render`
 	
@@ -254,11 +253,16 @@ function main(nx::Int, ny::Int, scene)
 	img
 end
 
-main(200,100, sky_color) # TO OPTIMIZE! 28.630 ms (520010 allocations: 13.05 MiB)
+# Before optimizations:
+#   28.630 ms (520010 allocations: 13.05 MiB)
+# After optimizations (skycolor, rand, etc.)
+#   10.358 ms (220010 allocations: 5.42 MiB) # at this stage, rgb() is most likely the culprit..
+#
+main(200,100, skycolor) 
 
 #md"# Chapter 5: Add a sphere"
 
-function hit_sphere1(center::Vec3, radius::AbstractFloat, r::Ray)
+function hit_sphere1(center::SVector{3,Float32}, radius::Float32, r::Ray)
 	oc = r.origin - center
 	a = r.dir ⋅ r.dir
 	b = 2oc ⋅ r.dir
@@ -268,14 +272,14 @@ function hit_sphere1(center::Vec3, radius::AbstractFloat, r::Ray)
 end
 
 function sphere_scene1(r::Ray)
-	if hit_sphere1(Vec3(0,0,-1), 0.5, r) # sphere of radius 0.5 centered at z=-1
-		return Vec3(1,0,0) # red
+	if hit_sphere1(@SVector[0f0,0f0,-1f0], 0.5f0, r) # sphere of radius 0.5 centered at z=-1
+		return @SVector[1f0,0f0,0f0] # red
 	else
-		sky_color(r)
+		skycolor(r)
 	end
 end
 
-main(200,100,sphere_scene1)
+@btime main(200,100,sphere_scene1) # 10.310 ms (220010 allocations: 5.42 MiB)
 
 #md"# Chapter 6: Surface normals and multiple objects"
 
@@ -299,7 +303,7 @@ function sphere_scene2(r::Ray)
 		n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
 		return 0.5f0n⃗ + Vec3(0.5f0,0.5f0,0.5f0) # remap normal to rgb
 	else
-		sky_color(r)
+		skycolor(r)
 	end
 end
 
@@ -517,7 +521,7 @@ function get_ray(c::Camera, s::MyFloat, t::MyFloat)
 									 t*c.vertical - c.origin - offset))
 end
 
-get_ray(default_camera(), 0.0f0, 0.0f0)
+@btime get_ray(default_camera(), 0.0f0, 0.0f0)
 
 """Compute color for a ray, recursively
 
@@ -549,7 +553,7 @@ function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
         #     return Vec3(0.0, 0.0, 0.0)
         # end
     else
-        sky_color(r)
+        skycolor(r)
     end
 end
 
@@ -743,14 +747,26 @@ t_cam = default_camera(t_lookfrom2, t_lookat2, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0
 #   880.997 ms (48801164 allocations: 847.10 MiB)
 # after switching to Float32 + reducing allocations using rand_vec3!(): 
 #    79.574 ms (  542467 allocations:  14.93 MiB)
-@time render(scene_random_spheres(), t_cam, 96, 1)
+# after optimizing skycolor, rand*, probably more stuff I forgot...
+#    38.242 ms (  235752 allocations:   6.37 MiB)
+render(scene_random_spheres(), t_cam, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
 # after lots of optimizations, up to switching to Float32 + reducing allocations using rand_vec3!(): 
 #   10.862032 seconds (70.09 M allocations: 1.858 GiB, 1.53% gc time)
-@time render(scene_random_spheres(), t_cam, 200, 32)
+# after optimizing skycolor, rand*, probably more stuff I forgot...
+#    4.926 s (25,694,163 allocations: 660.06 MiB)
+# claforte: At this point, I guess we're about at 200 mins to render this image, 
+# i.e. ~3.25X the time taken by the super-optimized multithreaded C++ implementation 
+# (that was still CPU-based)
 
-@time render(scene_random_spheres(), t_cam, 1920, 1000)
+#@btime render(scene_random_spheres(), t_cam, 200, 32) 
+
+# After some optimization, took ~5.6 hours:
+#   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
+# ... however the image looked weird... too blurry
+
+#@time render(scene_random_spheres(), t_cam, 1920, 1000)
 
 
 t_lookfrom = Point(3.0,3.0,2.0)
@@ -769,5 +785,7 @@ t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
 #  487.680 ms (7128113 allocations: 196.89 MiB) # More allocations... something is causing them...
 # after optimizing rand_vec3!/rand_vec2! to minimize allocations:
 #  423.468 ms (6075725 allocations: 158.92 MiB)
-@time render(scene_diel_spheres(), t_cam, 96, 16)
+# after optimizing skycolor, rand*, probably more stuff I forgot...
+#  217.853 ms (2942272 allocations: 74.82 MiB)
+@btime render(scene_diel_spheres(), t_cam, 96, 16)
 
