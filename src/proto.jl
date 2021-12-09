@@ -4,17 +4,29 @@
 using Pkg
 Pkg.activate(@__DIR__)
 
-MyFloat = Float32 # Float64 
+"""Next ideas:
 
+- try to confirm where the expensive remaining allocations are... rgb()? Ray? HitRecord? something else?
+- pre-allocate X paths (bundles? not sure what the terminology is) then 
+  implement versions of hit, scatter, etc. that operate on an entire matrix at once.
+  (i.e. efficiently parallelizable with multithreading, on SIMD or GPU)
+- use parameterizable structs for Vec but keep the same efficiency
+- clean up Pluto implementation
+- share with community, ask for feedback
+- continue watching MIT course
+"""
+
+
+MyFloat = Float32 # Float64 
 
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 Option{T} = Union{Missing, T}
-Vec3 = SVector{3, MyFloat}
-MVec3 = MVector{3, MyFloat}
-Vec2 = SVector{2, MyFloat}
-MVec2 = MVector{2, MyFloat}
-Point = Vec3
-Color = Vec3
+#Vec3 = SVector{3, MyFloat}
+#MVec3 = MVector{3, MyFloat}
+#Vec2 = SVector{2, MyFloat}
+#MVec2 = MVector{2, MyFloat}
+#Point = Vec3
+#Color = Vec3
 t_col = @SVector[0.4f0, 0.5f0, 0.1f0] # test color
 
 # claforte: This was meant to be a convenient function to get some_vec.x or some_color.r,
@@ -235,10 +247,10 @@ end
 		scene: a function that takes a ray, returns the color of any object it hit
 """
 function main(nx::Int, ny::Int, scene)
-	lower_left_corner = Point(-2, -1, -1)
-	horizontal = Vec3(4, 0, 0)
-	vertical = Vec3(0, 2, 0)
-	origin = Point(0, 0, 0)
+	lower_left_corner = @SVector[-2,-1,-1]
+	horizontal = @SVector[4,0,0]
+	vertical = @SVector[0f0,2f0,0f0]
+	origin = @SVector[0,0,0]
 	
 	img = zeros(RGB{MyFloat}, ny, nx)
 	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
@@ -257,7 +269,8 @@ end
 #   28.630 ms (520010 allocations: 13.05 MiB)
 # After optimizations (skycolor, rand, etc.)
 #   10.358 ms (220010 allocations: 5.42 MiB) # at this stage, rgb() is most likely the culprit..
-#
+# After replacing Color,Vec3 by @SVector:
+#    6.539 ms (80002 allocations: 1.75 MiB)
 main(200,100, skycolor) 
 
 #md"# Chapter 5: Add a sphere"
@@ -279,11 +292,11 @@ function sphere_scene1(r::Ray)
 	end
 end
 
-@btime main(200,100,sphere_scene1) # 10.310 ms (220010 allocations: 5.42 MiB)
+main(200,100,sphere_scene1) # 10.310 ms (220010 allocations: 5.42 MiB)
 
 #md"# Chapter 6: Surface normals and multiple objects"
 
-function hit_sphere2(center::Vec3, radius::AbstractFloat, r::Ray)
+function hit_sphere2(center::SVector{3,Float32}, radius::Float32, r::Ray)
 	oc = r.origin - center
 	a = r.dir ⋅ r.dir
 	b = 2oc ⋅ r.dir
@@ -297,17 +310,17 @@ function hit_sphere2(center::Vec3, radius::AbstractFloat, r::Ray)
 end
 
 function sphere_scene2(r::Ray)
-	sphere_center = Vec3(0f0,0f0,-1f0)
+	sphere_center = SVector{3,Float32}(0f0,0f0,-1f0)
 	t = hit_sphere2(sphere_center, 0.5f0, r) # sphere of radius 0.5 centered at z=-1
 	if t > 0f0
 		n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
-		return 0.5f0n⃗ + Vec3(0.5f0,0.5f0,0.5f0) # remap normal to rgb
+		return 0.5f0n⃗ + SVector{3,Float32}(0.5f0,0.5f0,0.5f0) # remap normal to rgb
 	else
 		skycolor(r)
 	end
 end
 
-main(200,100,sphere_scene2)
+main(200,100,sphere_scene2)  # 6.620 ms (80002 allocations: 1.75 MiB)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -320,8 +333,8 @@ mutable struct HitRecord
 	# claforte: Not sure if this needs to be mutable... might impact performance!
 
 	t::MyFloat # vector from the ray's origin to the intersection with a surface
-	p::Vec3 # point of the intersection between an object's surface and a ray
-	n⃗::Vec3 # surface's outward normal vector, points towards outside of object?
+	p::SVector{3,Float32} # point of the intersection between an object's surface and a ray
+	n⃗::SVector{3,Float32} # surface's outward normal vector, points towards outside of object?
 	
 	# If true, our ray hit from outside to the front of the surface. 
 	# If false, the ray hit from within.
@@ -330,7 +343,7 @@ mutable struct HitRecord
 end
 
 struct Sphere <: Hittable
-	center::Vec3
+	center::SVector{3,Float32}
 	radius::MyFloat
 	mat::Material
 end
@@ -340,7 +353,7 @@ end
 # """
 
 """Equivalent to `hit_record.set_face_normal()`"""
-function ray_to_HitRecord(t, p, outward_n⃗, r_dir::Vec3, mat::Material)
+function ray_to_HitRecord(t, p, outward_n⃗, r_dir::SVector{3,Float32}, mat::Material)
 	front_face = r_dir ⋅ outward_n⃗ < 0
 	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
 	rec = HitRecord(t,p,n⃗,front_face,mat)
@@ -348,7 +361,7 @@ end
 
 struct Scatter
 	r::Ray
-	attenuation::Color
+	attenuation::SVector{3,Float32}
 	
 	# claforte: TODO: rename to "absorbed?", i.e. not reflected/refracted?
 	reflected::Bool # whether the scattered ray was reflected, or fully absorbed
@@ -357,15 +370,15 @@ end
 
 #"Diffuse material"
 mutable struct Lambertian<:Material
-	albedo::Color
+	albedo::SVector{3,Float32}
 end
 
 """Compute reflection vector for v (pointing to surface) and normal n⃗.
 
 	See [diagram](https://raytracing.github.io/books/RayTracingInOneWeekend.html#metal/mirroredlightreflection)"""
-reflect(v::Vec3, n⃗::Vec3) = normalize(v - (2v⋅n⃗)*n⃗) # claforte: normalize not needed?
+reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = normalize(v - (2v⋅n⃗)*n⃗) # claforte: normalize not needed?
 
-@assert reflect(Vec3(0.6,-0.8,0), Vec3(0,1,0)) == Vec3(0.6,0.8,0) # diagram's example
+@assert reflect(@SVector[0.6f0,-0.8f0,0f0], @SVector[0f0,1f0,0f0]) == @SVector[0.6f0,0.8f0,0f00] # diagram's example
 
 """Create a scattered ray emitted by `mat` from incident Ray `r`. 
 
@@ -428,12 +441,12 @@ function hit(hittables::HittableList, r::Ray, tmin::MyFloat,
     rec
 end
 
-color_vec3_in_rgb(v::Vec3) = 0.5normalize(v) + Vec3(0.5,0.5,0.5)
+color_vec3_in_rgb(v::SVector{3,Float32}) = 0.5normalize(v) + @SVector[0.5f,0.5f,0.5f]
 
 #md"# Metal material"
 
 mutable struct Metal<:Material
-	albedo::Color
+	albedo::SVector{3,Float32}
 	fuzz::MyFloat # how big the sphere used to generate fuzzy reflection rays. 0=none
 	Metal(a,f=0.0) = new(a,f)
 end
@@ -451,10 +464,10 @@ function scene_2_spheres()::HittableList
 	spheres = Sphere[]
 	
 	# small center sphere
-	push!(spheres, Sphere(Vec3(0,0,-1), 0.5, Lambertian(Color(0.7,0.3,0.3))))
+	push!(spheres, Sphere(@SVector[0f0,0f0,-1f0], 0.5, Lambertian(@SVector[0.7f0,0.3f0,0.3f0])))
 	
 	# ground sphere (planet?)
-	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100, Lambertian(Color(0.8,0.8,0.0))))
+	push!(spheres, Sphere(@SVector[0f0,-100.5f0,-1f0], 100, Lambertian(@SVector[0.8f0,0.8f0,0.0f0])))
 	HittableList(spheres)
 end
 
@@ -465,8 +478,8 @@ function scene_4_spheres()::HittableList
 	scene = scene_2_spheres()
 
 	# left and right Metal spheres
-	push!(scene.list, Sphere(Vec3(-1,0,-1), 0.5, Metal(Color(0.8,0.8,0.8), 0.3))) 
-	push!(scene.list, Sphere(Vec3( 1,0,-1), 0.5, Metal(Color(0.8,0.6,0.2), 0.8)))
+	push!(scene.list, Sphere(@SVector[-1f0,0f0,-1f0], 0.5f0, Metal(@SVector[0.8f0,0.8f0,0.8f0], 0.3f0))) 
+	push!(scene.list, Sphere(@SVector[1f0,0f0,-1f0], 0.5f0, Metal(@SVector[0.8f0,0.6f0,0.2f0], 0.8f0)))
 	return scene
 end
 
@@ -474,13 +487,13 @@ end
 
 # Adapted from C++'s sections 7.2, 11.1 """
 mutable struct Camera
-	origin::Vec3
-	lower_left_corner::Vec3
-	horizontal::Vec3
-	vertical::Vec3
-	u::Vec3
-	v::Vec3
-	w::Vec3
+	origin::SVector{3,Float32}
+	lower_left_corner::SVector{3,Float32}
+	horizontal::SVector{3,Float32}
+	vertical::SVector{3,Float32}
+	u::SVector{3,Float32}
+	v::SVector{3,Float32}
+	w::SVector{3,Float32}
 	lens_radius::MyFloat
 end
 
@@ -490,8 +503,8 @@ end
 		aspect_ratio: horizontal/vertical ratio of pixels
       aperture: if 0 - no depth-of-field
 """
-function default_camera(lookfrom::Point=Point(0f0,0f0,0f0), lookat::Point=Point(0f0,0f0,-1f0), 
-						vup::Vec3=Vec3(0f0,1f0,0f0), vfov=90.0f0, aspect_ratio=16.0f0/9.0f0,
+function default_camera(lookfrom::SVector{3,Float32}=@SVector[0f0,0f0,0f0], lookat::SVector{3,Float32}=@SVector[0f0,0f0,-1f0], 
+						vup::SVector{3,Float32}=@SVector[0f0,1f0,0f0], vfov=90.0f0, aspect_ratio=16.0f0/9.0f0,
 						aperture=0.0f0, focus_dist=1.0f0)
 	viewport_height = 2.0f0 * tand(vfov/2f0)
 	viewport_width = aspect_ratio * viewport_height
@@ -510,12 +523,10 @@ end
 
 default_camera()
 
-clamp(3.5, 0, 1)
-
 #md"# Render
 
 function get_ray(c::Camera, s::MyFloat, t::MyFloat)
-	rd = Vec2(c.lens_radius * random_vec2_in_disk())
+	rd = SVector{2,Float32}(c.lens_radius * random_vec2_in_disk())
 	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
 									 t*c.vertical - c.origin - offset))
@@ -527,9 +538,9 @@ end
 
 	Args:
 		depth: how many more levels of recursive ray bounces can we still compute?"""
-function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
+function ray_color(r::Ray, world::HittableList, depth=4)
     if depth <= 0
-		return Vec3(0,0,0)
+		return @SVector[0f0,0f0,0f0]
 	end
 		
 	rec = hit(world, r, 1f-4, Inf32)
@@ -545,12 +556,12 @@ function ray_color(r::Ray, world::HittableList, depth=4)::Vec3
 		if s.reflected
 			return s.attenuation .* ray_color(s.r, world, depth-1)
 		else
-			return Vec3(0,0,0)
+			return @SVector[0f0,0f0,0f0]
 		end
         # if s.reflected && depth < 20
         #     return s.attenuation .* color(s.ray, world, depth+1)
         # else
-        #     return Vec3(0.0, 0.0, 0.0)
+        #     return @SVector[0f0,0f0,0f0]
         # end
     else
         skycolor(r)
@@ -578,7 +589,7 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 	# 2. 1-based, so no need to subtract 1 from image_width, etc.
 	# 3. The array is Y-down, but `v` is Y-up 
 	for i in 1:image_height, j in 1:image_width
-		accum_color = Vec3(0f0,0f0,0f0)
+		accum_color = @SVector[0f0,0f0,0f0]
 		for s in 1:n_samples
 			u = MyFloat(j/image_width)
 			v = MyFloat((image_height-i)/image_height) # i is Y-down, v is Y-up!
@@ -596,6 +607,8 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 	img
 end
 
+# After some optimization:
+#  46.506 ms (917106 allocations: 16.33 MiB)
 render(scene_2_spheres(), default_camera(), 96, 16)
 
 render(scene_4_spheres(), default_camera(), 96, 16)
@@ -613,20 +626,20 @@ render(scene_4_spheres(), default_camera(), 96, 16)
 # 	Args:
 # 		refraction_ratio: incident refraction index divided by refraction index of 
 # 			hit surface. i.e. η/η′ in the figure above"""
-function refract(dir::Vec3, n⃗::Vec3, refraction_ratio::MyFloat)
+function refract(dir::SVector{3,Float32}, n⃗::SVector{3,Float32}, refraction_ratio::MyFloat)
 	cosθ = min(-dir ⋅ n⃗, 1)
 	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
 	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗
 	normalize(r_out_perp + r_out_parallel)
 end
 
-@assert refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 1.0f0) == Vec3(0.6,-0.8,0) # unchanged
+@assert refract(SVector{3,Float32}(0.6,-0.8,0), SVector{3,Float32}(0,1,0), 1.0f0) == SVector{3,Float32}(0.6,-0.8,0) # unchanged
 
-t_refract_widerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 2.0f0) # wider angle
-@assert isapprox(t_refract_widerθ, Vec3(0.87519, -0.483779, 0.0); atol=1e-3)
+t_refract_widerθ = refract(SVector{3,Float32}(0.6,-0.8,0), SVector{3,Float32}(0,1,0), 2.0f0) # wider angle
+@assert isapprox(t_refract_widerθ, SVector{3,Float32}(0.87519, -0.483779, 0.0); atol=1e-3)
 
-t_refract_narrowerθ = refract(Vec3(0.6,-0.8,0), Vec3(0,1,0), 0.5f0) # narrower angle
-@assert isapprox(t_refract_narrowerθ, Vec3(0.3, -0.953939, 0.0); atol=1e-3)
+t_refract_narrowerθ = refract(SVector{3,Float32}(0.6,-0.8,0), SVector{3,Float32}(0,1,0), 0.5f0) # narrower angle
+@assert isapprox(t_refract_narrowerθ, SVector{3,Float32}(0.3, -0.953939, 0.0); atol=1e-3)
 
 mutable struct Dielectric <: Material
 	ir::MyFloat # index of refraction, i.e. η.
@@ -635,13 +648,13 @@ end
 function reflectance(cosθ::MyFloat, refraction_ratio::MyFloat)
 	# Use Schlick's approximation for reflectance.
 	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
-	r0 = (1-refraction_ratio) / (1+refraction_ratio)
+	r0 = (1f0-refraction_ratio) / (1f0+refraction_ratio)
 	r0 = r0^2
-	r0 + (1-r0)*((1-cosθ)^5)
+	r0 + (1f0-r0)*((1f0-cosθ)^5)
 end
 
 function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
-	attenuation = Color(1,1,1)
+	attenuation = @SVector[1f0,1f0,1f0]
 	refraction_ratio = rec.front_face ? (1.0f0/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
 	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0f0)
 	sinθ = √(1.0f0 - cosθ^2)
@@ -655,19 +668,19 @@ function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
 end
 
 #"From C++: Image 15: Glass sphere that sometimes refracts"
-function scene_diel_spheres(left_radius=0.5)::HittableList # dielectric spheres
+function scene_diel_spheres(left_radius=0.5f0)::HittableList # dielectric spheres
 	spheres = Sphere[]
 	
 	# small center sphere
-	push!(spheres, Sphere(Vec3(0,0,-1), 0.5, Lambertian(Color(0.1,0.2,0.5))))
+	push!(spheres, Sphere(SVector{3,Float32}(0f0,0f0,-1f0), 0.5f0, Lambertian(SVector{3,Float32}(0.1f0,0.2f0,0.5f0))))
 	
 	# ground sphere (planet?)
-	push!(spheres, Sphere(Vec3(0,-100.5,-1), 100, Lambertian(Color(0.8,0.8,0.0))))
+	push!(spheres, Sphere(SVector{3,Float32}(0f0,-100.5f0,-1f0), 100f0, Lambertian(SVector{3,Float32}(0.8f0,0.8f0,0.0f0))))
 	
 	# left and right spheres.
 	# Use a negative radius on the left sphere to create a "thin bubble" 
-	push!(spheres, Sphere(Vec3(-1,0,-1), left_radius, Dielectric(1.5))) 
-	push!(spheres, Sphere(Vec3( 1,0,-1), 0.5, Metal(Color(0.8,0.6,0.2), 0.0)))
+	push!(spheres, Sphere(SVector{3,Float32}(-1f0,0f0,-1f0), left_radius, Dielectric(1.5f0))) 
+	push!(spheres, Sphere(SVector{3,Float32}( 1f0,0f0,-1f0), 0.5f0, Metal(SVector{3,Float32}(0.8f0,0.6f0,0.2f0), 0.0f0)))
 	HittableList(spheres)
 end
 
@@ -679,8 +692,8 @@ render(scene_diel_spheres(), default_camera(), 96, 16)
 function scene_blue_red_spheres()::HittableList # dielectric spheres
 	spheres = Sphere[]
 	R = cos(pi/4)
-	push!(spheres, Sphere(Vec3(-R,0,-1), R, Lambertian(Color(0,0,1)))) 
-	push!(spheres, Sphere(Vec3( R,0,-1), R, Lambertian(Color(1,0,0)))) 
+	push!(spheres, Sphere(@SVector[-R,0f0,-1f0], R, Lambertian(@SVector[0f0,0f0,1f0]))) 
+	push!(spheres, Sphere(@SVector[R,0f0,-1f0], R, Lambertian(@SVector[1f0,0f0,0f0]))) 
 	HittableList(spheres)
 end
 
@@ -688,39 +701,36 @@ end
 
 #md"# Random spheres"
 
-
-
 function scene_random_spheres()::HittableList # dielectric spheres
 	spheres = Sphere[]
 
 	# ground 
-	push!(spheres, Sphere(Vec3(0,-1000,-1), 1000, Lambertian(Color(0.5,0.5,0.5))))
+	push!(spheres, Sphere(@SVector[0f0,-1000f0,-1f0], 1000f0, Lambertian(@SVector[0.5f0,0.5f0,0.5f0])))
 
 	for a in -11:10, b in -11:10
 		choose_mat = rand()
-		center = Point(a + 0.9*rand(), 0.2, b + 0.9*rand())
+		center = @SVector[a + 0.9f0*rand(), 0.2f0, b + 0.90f0*rand()]
 		
-		if norm(center - Point(4,0.2,0)) < 0.9 continue end # skip spheres too close?
+		if norm(center - @SVector[4f0,0.2f0,0f0]) < 0.9f0 continue end # skip spheres too close?
 			
-		if choose_mat < 0.8
+		if choose_mat < 0.8f0
 			# diffuse
-			albedo = Color(rand(3)...) .* Color(rand(3)...) # TODO: random_color()
-			push!(spheres, Sphere(center, 0.2, Lambertian(albedo)))
-		elseif choose_mat < 0.95
+			albedo = @SVector[rand(), rand(), rand()] .* @SVector[rand(), rand(), rand()] # TODO: random_color()
+			push!(spheres, Sphere(center, 0.2f0, Lambertian(albedo)))
+		elseif choose_mat < 0.95f0
 			# metal
-			albedo = Color(random_between(0.5,1.0), random_between(0.5,1.0),
-						   random_between(0.5,1.0)) # TODO: random_color
-			fuzz = random_between(0.0, 5.0)
-			push!(spheres, Sphere(center, 0.2, Metal(albedo, fuzz)))
+			albedo = @SVector[random_between(0.5f0,1.0f0), random_between(0.5f0,1.0f0), random_between(0.5f0,1.0f0)] # TODO: random_color
+			fuzz = random_between(0.0f0, 5.0f0)
+			push!(spheres, Sphere(center, 0.2f0, Metal(albedo, fuzz)))
 		else
 			# glass
-			push!(spheres, Sphere(center, 0.2, Dielectric(1.5)))
+			push!(spheres, Sphere(center, 0.2f0, Dielectric(1.5f0)))
 		end
 	end
 
-	push!(spheres, Sphere(Point(0,1,0), 1.0, Dielectric(1.5)))
-	push!(spheres, Sphere(Point(-4,1,0), 1.0, Lambertian(Color(0.4,0.2,0.1))))
-	push!(spheres, Sphere(Point(4,1,0), 1.0, Metal(Color(0.7,0.6,0.5), 0.0)))
+	push!(spheres, Sphere(@SVector[0f0,1f0,0f0], 1.0f0, Dielectric(1.5f0)))
+	push!(spheres, Sphere(@SVector[-4f0,1f0,0f0], 1.0f0, Lambertian(@SVector[0.4f0,0.2f0,0.1f0])))
+	push!(spheres, Sphere(@SVector[4f0,1f0,0f0], 1.0f0, Metal(@SVector[0.7f0,0.6f0,0.5f0], 0.0f0)))
 	HittableList(spheres)
 end
 
@@ -730,17 +740,17 @@ scene_random_spheres()
 # claforte: getting a weird black halo in the glass sphere... might be due to my
 # "fix" for previous black spots, by moving the RecordHit point a bit away from 
 # the hit surface... 
-render(scene_diel_spheres(-0.5), default_camera(), 96, 16)
+render(scene_diel_spheres(-0.5f0), default_camera(), 96, 16)
 
 render(scene_blue_red_spheres(), default_camera(), 96, 16)
 
-render(scene_diel_spheres(), default_camera(Point(-2,2,1), Point(0,0,-1),
-							 				Vec3(0,1,0), 20.0), 96, 16)
+render(scene_diel_spheres(), default_camera(@SVector[-2f0,2f0,1f0], @SVector[0f0,0f0,-1f0],
+							 				@SVector[0f0,1f0,0f0], 20.0f0), 96, 16)
 
-t_lookfrom2 = Point(13.0,2.0,3.0)
-t_lookat2 = Point(0.0,0.0,0.0)
-t_cam = default_camera(t_lookfrom2, t_lookat2, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
-                        0.1, 10.0)
+t_lookfrom2 = @SVector[13.0f0,2.0f0,3.0f0]
+t_lookat2 = @SVector[0.0f0,0.0f0,0.0f0]
+t_cam = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 20.0f0, 16.0f0/9.0f0,
+                        0.1f0, 10.0f0)
 
 # took ~20s (really rough timing) in REPL, before optimization
 # after optimization: 
@@ -749,6 +759,8 @@ t_cam = default_camera(t_lookfrom2, t_lookat2, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0
 #    79.574 ms (  542467 allocations:  14.93 MiB)
 # after optimizing skycolor, rand*, probably more stuff I forgot...
 #    38.242 ms (  235752 allocations:   6.37 MiB)
+# after removing all remaining Color, Vec3, replacing them with @SVector[]...
+#    26.790 ms (   91486 allocations: 2.28 MiB)
 render(scene_random_spheres(), t_cam, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -756,24 +768,25 @@ render(scene_random_spheres(), t_cam, 96, 1)
 #   10.862032 seconds (70.09 M allocations: 1.858 GiB, 1.53% gc time)
 # after optimizing skycolor, rand*, probably more stuff I forgot...
 #    4.926 s (25,694,163 allocations: 660.06 MiB)
-# claforte: At this point, I guess we're about at 200 mins to render this image, 
-# i.e. ~3.25X the time taken by the super-optimized multithreaded C++ implementation 
-# (that was still CPU-based)
+# after removing all remaining Color, Vec3, replacing them with @SVector[]...
+#    3.541 s (9074843 allocations: 195.22 MiB)
 
-#@btime render(scene_random_spheres(), t_cam, 200, 32) 
+render(scene_random_spheres(), t_cam, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
 # ... however the image looked weird... too blurry
+# After removing all remaining Color, Vec3, replacing them with @SVector[]... took ~3.7 hours:
+#   13326.770907 seconds (29.82 G allocations: 714.941 GiB, 0.36% gc time)
 
 #@time render(scene_random_spheres(), t_cam, 1920, 1000)
 
 
-t_lookfrom = Point(3.0,3.0,2.0)
-t_lookat = Point(0.0,0.0,-1.0)
+t_lookfrom = @SVector[3.0f0,3.0f0,2.0f0]
+t_lookat = @SVector[0.0f0,0.0f0,-1.0f0]
 dist_to_focus = norm(t_lookfrom-t_lookat)
-t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
-                        2.0, dist_to_focus)
+t_cam = default_camera(t_lookfrom, t_lookat, @SVector[0.0f0,1.0f0,0.0f0], 20.0f0, 16.0f0/9.0f0,
+                        2.0f0, dist_to_focus)
 
 # Before optimization:
 #  5.993 s  (193097930 allocations: 11.92 GiB)
@@ -787,5 +800,7 @@ t_cam = default_camera(t_lookfrom, t_lookat, Vec3(0.0,1.0,0.0), 20.0, 16.0/9.0,
 #  423.468 ms (6075725 allocations: 158.92 MiB)
 # after optimizing skycolor, rand*, probably more stuff I forgot...
 #  217.853 ms (2942272 allocations: 74.82 MiB)
+# after removing all remaining Color, Vec3, replacing them with @SVector[]...
+#   56.778 ms (1009344 allocations: 20.56 MiB)
 @btime render(scene_diel_spheres(), t_cam, 96, 16)
 
