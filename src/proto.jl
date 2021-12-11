@@ -10,6 +10,8 @@ Pkg.activate(@__DIR__)
 - pre-allocate X paths (bundles? not sure what the terminology is) then 
   implement versions of hit, scatter, etc. that operate on an entire matrix at once.
   (i.e. efficiently parallelizable with multithreading, on SIMD or GPU)
+- figure out why my final scene has the wrong angle
+- figure out the incorrect look in refraction of negatively scaled sphere
 - use parameterizable structs for Vec but keep the same efficiency
 - clean up Pluto implementation
 - share with community, ask for feedback
@@ -70,10 +72,10 @@ squared_length(v::SVector{3,MyFloat}) = v ⋅ v
 #     3.256 ns (0 allocations: 0 bytes)
 # replace: @btime squared_length($t_col) # notice the $
 #     1.152 ns (0 allocations: 0 bytes)
-@btime squared_length($t_col)
+#@btime squared_length($t_col)
 
 near_zero(v::SVector{3,MyFloat}) = squared_length(v) < 1e-5
-@btime near_zero($t_col) # 1.382 ns (0 allocations: 0 bytes)
+#@btime near_zero($t_col) # 1.382 ns (0 allocations: 0 bytes)
 
 # Test images
 
@@ -107,11 +109,11 @@ gradient(200,100)
 
 rgb(v::SVector{3,MyFloat}) = RGB{MyFloat}(v[1], v[2], v[3])
 #rgb(v::Vec3) = RGB{MyFloat}(v...)
-@btime rgb($t_col) # 289.914 ns (4 allocations: 80 bytes)
+#@btime rgb($t_col) # 289.914 ns (4 allocations: 80 bytes)
 
 rgb_gamma2(v::SVector{3,MyFloat}) = RGB{MyFloat}(sqrt.(v)...)
 
-@btime rgb_gamma2($t_col) # 454.766 ns (11 allocations: 256 bytes)
+#@btime rgb_gamma2($t_col) # 454.766 ns (11 allocations: 256 bytes)
 
 struct Ray
 	origin::SVector{3, MyFloat} # Point 
@@ -122,7 +124,7 @@ end
 p_zero = @SVector[0.0f0,0.0f0,0.0f0]
 v3_minusY = @SVector[0.0f0,-1.0f0,0.0f0]
 t_ray1 = Ray(p_zero, v3_minusY)
-@btime Ray($p_zero, $v3_minusY) # 6.341 ns (0 allocations: 0 bytes)
+#@btime Ray($p_zero, $v3_minusY) # 6.341 ns (0 allocations: 0 bytes)
 
 
 # equivalent to C++'s ray.at()
@@ -137,7 +139,7 @@ function point(r::Ray, t::MyFloat)
 	r.origin .+ t .* r.dir
 end
 
-@btime point($t_ray1, 0.5f0) # 1.392 ns (0 allocations: 0 bytes)
+#@btime point($t_ray1, 0.5f0) # 1.392 ns (0 allocations: 0 bytes)
 
 #md"# Chapter 4: Rays, simple camera, and background"
 
@@ -147,7 +149,7 @@ function skycolor(ray::Ray)
 	t = 0.5f0(ray.dir[2] + 1.0f0)
     (1.0f0-t)*white + t*skyblue
 end
-@btime skycolor($t_ray1) # 1.402 ns (0 allocations: 0 bytes)
+#@btime skycolor($t_ray1) # 1.402 ns (0 allocations: 0 bytes)
 
 # before optim: 
 #   1.474 μs (23 allocations: 608 bytes)
@@ -167,26 +169,13 @@ end
 #         1.402 ns (0 allocations: 0 bytes)
 # restore the rgb(), i.e. `@btime rgb(skycolor($t_ray1))`
 #   291.492 ns (4 allocations: 80 bytes)
-@btime rgb(skycolor($t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
+#@btime rgb(skycolor($t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
 
 # md"""# Random vectors
 # C++'s section 8.1"""
 
-# rand(Float32) seems much slower... try this instead:
-# from https://github.com/JuliaLang/julia/issues/3804
-import Base.UInt32
-# function rand_float32()
-#     a = rand(UInt32)
-#     shift = UInt32(leading_zeros(a)+1)
-#     b = shift > 0x00000009 ? (rand(Uint32) >> (32-(shift-9))) : zero(UInt32)
-#     reinterpret(Float32, (0x0000007f $ shift)<<23 | (b > zero(UInt32) ? (a << (shift-9) | b) :  a >> (9-shift)) & 0x007FFFFF)
-# end
-# @btime rand_float32() # doesn't work because of $... the language probably changed since 2013...
-
-@btime rand(Float32)
-
 random_between(min=0.0f0, max=1.0f0) = rand(Float32)*(max-min) + min # equiv to random_double()
-@btime random_between(50f0, 100f0) # 4.519 ns (0 allocations: 0 bytes)
+#@btime random_between(50f0, 100f0) # 4.519 ns (0 allocations: 0 bytes)
 
 function random_vec3(min::Float32, max::Float32)
 	@SVector[random_between(min, max) for i in 1:3]
@@ -198,12 +187,12 @@ end
 #   179.684 ns (5 allocations: 112 bytes)
 # Return @SVector[] instead of Vec3():
 #    12.557 ns (0 allocations: 0 bytes)
-@btime random_vec3(-1.0f0,1.0f0)
+#@btime random_vec3(-1.0f0,1.0f0)
 
 function random_vec2(min::Float32, max::Float32)
 	@SVector[random_between(min, max) for i in 1:2]
 end
-@btime random_vec2(-1.0f0,1.0f0) # 8.536 ns (0 allocations: 0 bytes)
+#@btime random_vec2(-1.0f0,1.0f0) # 8.536 ns (0 allocations: 0 bytes)
 
 function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
 	while (true)
@@ -214,13 +203,13 @@ function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
 		end
 	end
 end
-@btime random_vec3_in_sphere() # 46.587 ns (0 allocations: 0 bytes)
+#@btime random_vec3_in_sphere() # 46.587 ns (0 allocations: 0 bytes)
 
 squared_length(random_vec3_in_sphere())
 
 "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
 random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
-@btime random_vec3_on_sphere()
+#@btime random_vec3_on_sphere()
 
 # Before optim:
 #   517.538 ns (12 allocations: 418 bytes)... but random
@@ -239,7 +228,7 @@ function random_vec2_in_disk() # equiv to random_in_unit_disk()
 		end
 	end
 end
-@btime random_vec2_in_disk() # 16.725 ns (0 allocations: 0 bytes)
+#@btime random_vec2_in_disk() # 16.725 ns (0 allocations: 0 bytes)
 
 """ Temporary function to shoot rays through each pixel. Later replaced by `render`
 	
@@ -328,11 +317,18 @@ abstract type Hittable end
 """Materials tell us how rays interact with a surface"""
 abstract type Material end
 
-"Record a hit between a ray and an object's surface"
-mutable struct HitRecord
-	# claforte: Not sure if this needs to be mutable... might impact performance!
+struct NoMaterial <: Material end
 
-	t::MyFloat # vector from the ray's origin to the intersection with a surface
+const _no_material = NoMaterial()
+const _origin = @SVector[0f0,0f0,0f0]
+const _y_up = @SVector[0f0,1f0,0f0]
+
+"Record a hit between a ray and an object's surface"
+struct HitRecord
+	t::MyFloat # vector from the ray's origin to the intersection with a surface. 
+	
+	# If t==Inf32, there was no hit, and all following values are undefined!
+	#
 	p::SVector{3,Float32} # point of the intersection between an object's surface and a ray
 	n⃗::SVector{3,Float32} # surface's outward normal vector, points towards outside of object?
 	
@@ -340,6 +336,9 @@ mutable struct HitRecord
 	# If false, the ray hit from within.
 	front_face::Bool
 	mat::Material
+
+	HitRecord() = new(Inf32) # no hit!
+	HitRecord(t,p,n⃗,front_face,mat) = new(t,p,n⃗,front_face,mat)
 end
 
 struct Sphere <: Hittable
@@ -398,13 +397,15 @@ function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
 	return Scatter(scattered_r, attenuation)
 end
 
-function hit(s::Sphere, r::Ray, tmin::MyFloat, tmax::MyFloat)::Option{HitRecord}
+const _no_hit = HitRecord()
+
+function hit(s::Sphere, r::Ray, tmin::MyFloat, tmax::MyFloat)#::Option{HitRecord} # the return type seems to cause excessive allocations
     oc = r.origin - s.center
     a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
     half_b = oc ⋅ r.dir
     c = oc⋅oc - s.radius^2
     discriminant = half_b^2 - a*c
-	if discriminant < 0 return missing end
+	if discriminant < 0 return _no_hit end
 	sqrtd = √discriminant
 	
 	# Find the nearest root that lies in the acceptable range
@@ -412,14 +413,14 @@ function hit(s::Sphere, r::Ray, tmin::MyFloat, tmax::MyFloat)::Option{HitRecord}
 	if root < tmin || tmax < root
 		root = (-half_b + sqrtd) / a
 		if root < tmin || tmax < root
-			return missing
+			return _no_hit
 		end
 	end
 		
 	t = root
 	p = point(r, t)
 	n⃗ = (p - s.center) / s.radius
-	return ray_to_HitRecord(t, p, n⃗, r.dir,s.mat)
+	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
 end
 
 struct HittableList <: Hittable
@@ -428,12 +429,12 @@ end
 
 #"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
 function hit(hittables::HittableList, r::Ray, tmin::MyFloat,
-			 tmax::MyFloat)::Option{HitRecord}
+			 tmax::MyFloat)::HitRecord
     closest = tmax # closest t so far
-    rec = missing
+    rec = _no_hit
     for h in hittables.list
         temprec = hit(h, r, tmin, closest)
-        if !ismissing(temprec)
+        if temprec !== _no_hit
             rec = temprec
             closest = rec.t # i.e. ignore any further hit > this one's.
         end
@@ -532,7 +533,7 @@ function get_ray(c::Camera, s::MyFloat, t::MyFloat)
 									 t*c.vertical - c.origin - offset))
 end
 
-@btime get_ray(default_camera(), 0.0f0, 0.0f0)
+#@btime get_ray(default_camera(), 0.0f0, 0.0f0)
 
 """Compute color for a ray, recursively
 
@@ -544,7 +545,7 @@ function ray_color(r::Ray, world::HittableList, depth=4)
 	end
 		
 	rec = hit(world, r, 1f-4, Inf32)
-    if !ismissing(rec)
+    if rec !== _no_hit
 		# For debugging, represent vectors as RGB:
 		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
 		# return color_vec3_in_rgb(rec.n⃗) # show the normal in RGB
@@ -591,13 +592,13 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 	for i in 1:image_height, j in 1:image_width
 		accum_color = @SVector[0f0,0f0,0f0]
 		for s in 1:n_samples
-			u = MyFloat(j/image_width)
-			v = MyFloat((image_height-i)/image_height) # i is Y-down, v is Y-up!
+			u = convert(Float32, j/image_width)
+			v = convert(Float32, (image_height-i)/image_height) # i is Y-down, v is Y-up!
 			if s != 1 # 1st sample is always centered, for 1-sample/pixel
 				# claforte: I think the C++ version had a bug, the rand offset was
 				# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-				u += MyFloat((rand()-0.5f0) / image_width)
-				v += MyFloat((rand()-0.5f0) / image_height)
+				u += convert(Float32, (rand()-0.5f0) / image_width)
+				v += convert(Float32 ,(rand()-0.5f0) / image_height)
 			end
 			ray = get_ray(cam, u, v)
 			accum_color += ray_color(ray, scene)
@@ -609,6 +610,13 @@ end
 
 # After some optimization:
 #  46.506 ms (917106 allocations: 16.33 MiB)
+# Using convert(Float32, ...) instead of MyFloat(...):
+#  14.137 ms (118583 allocations: 4.14 MiB)
+# Don't specify return value of Option{HitRecord} in hit()
+#  24.842 ms (527738 allocations: 16.63 MiB)
+# Don't initialize unnecessary elements in HitRecord(): 
+#  14.862 ms (118745 allocations: 4.15 MiB)  (but computer was busy...)
+#
 render(scene_2_spheres(), default_camera(), 96, 16)
 
 render(scene_4_spheres(), default_camera(), 96, 16)
@@ -761,6 +769,11 @@ t_cam = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 20.0
 #    38.242 ms (  235752 allocations:   6.37 MiB)
 # after removing all remaining Color, Vec3, replacing them with @SVector[]...
 #    26.790 ms (   91486 allocations: 2.28 MiB)
+# Using convert(Float32, ...) instead of MyFloat(...):
+#    25.856 ms (   70650 allocations: 1.96 MiB)
+# Don't specify return value of Option{HitRecord} in hit()
+# Don't initialize unnecessary elements in HitRecord(): 
+#    38.961 ms (   70681 allocations: 1.96 MiB) # WORSE, probably because we're writing a lot more to stack...?
 render(scene_random_spheres(), t_cam, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -770,16 +783,25 @@ render(scene_random_spheres(), t_cam, 96, 1)
 #    4.926 s (25,694,163 allocations: 660.06 MiB)
 # after removing all remaining Color, Vec3, replacing them with @SVector[]...
 #    3.541 s (9074843 allocations: 195.22 MiB)
-
-render(scene_random_spheres(), t_cam, 200, 32) 
+# Using convert(Float32, ...) instead of MyFloat(...):
+#    3.222 s (2055106 allocations: 88.53 MiB)
+# Don't specify return value of Option{HitRecord} in hit()
+# Don't initialize unnecessary elements in HitRecord(): 
+#    5.016 s (2056817 allocations: 88.61 MiB) #  WORSE, probably because we're writing a lot more to stack...?
+#render(scene_random_spheres(), t_cam, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
 # ... however the image looked weird... too blurry
 # After removing all remaining Color, Vec3, replacing them with @SVector[]... took ~3.7 hours:
 #   13326.770907 seconds (29.82 G allocations: 714.941 GiB, 0.36% gc time)
+# Using convert(Float32, ...) instead of MyFloat(...):
+# Don't specify return value of Option{HitRecord} in hit()
+# Don't initialize unnecessary elements in HitRecord(): 
+# Took ~4.1 hours:
+#   14723.339976 seconds (5.45 G allocations: 243.044 GiB, 0.11% gc time) # WORSE, probably because we're writing a lot more to stack...?
 
-#@time render(scene_random_spheres(), t_cam, 1920, 1000)
+@time render(scene_random_spheres(), t_cam, 1920, 1000)
 
 
 t_lookfrom = @SVector[3.0f0,3.0f0,2.0f0]
@@ -802,5 +824,13 @@ t_cam = default_camera(t_lookfrom, t_lookat, @SVector[0.0f0,1.0f0,0.0f0], 20.0f0
 #  217.853 ms (2942272 allocations: 74.82 MiB)
 # after removing all remaining Color, Vec3, replacing them with @SVector[]...
 #   56.778 ms (1009344 allocations: 20.56 MiB)
-@btime render(scene_diel_spheres(), t_cam, 96, 16)
+# Using convert(Float32, ...) instead of MyFloat(...):
+#   23.870 ms (210890 allocations: 8.37 MiB)
+#render(scene_diel_spheres(), t_cam, 96, 16)
+
+using Profile
+Profile.clear_malloc_data()
+
+render(scene_2_spheres(), default_camera(), 96, 16)
+#render(scene_random_spheres(), t_cam, 200, 32) 
 
