@@ -18,17 +18,8 @@ Pkg.activate(@__DIR__)
 - continue watching MIT course
 """
 
-
-MyFloat = Float32 # Float64 
-
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 Option{T} = Union{Missing, T}
-#Vec3 = SVector{3, MyFloat}
-#MVec3 = MVector{3, MyFloat}
-#Vec2 = SVector{2, MyFloat}
-#MVec2 = MVector{2, MyFloat}
-#Point = Vec3
-#Color = Vec3
 t_col = @SVector[0.4f0, 0.5f0, 0.1f0] # test color
 
 # claforte: This was meant to be a convenient function to get some_vec.x or some_color.r,
@@ -51,7 +42,7 @@ t_col = @SVector[0.4f0, 0.5f0, 0.1f0] # test color
 # t_col[1]# t_col.r
 # t_col[2] #t_col.y
 
-squared_length(v::SVector{3,MyFloat}) = v ⋅ v
+squared_length(v::SVector{3,Float32}) = v ⋅ v
 
 # Before optimization:
 #   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
@@ -74,7 +65,7 @@ squared_length(v::SVector{3,MyFloat}) = v ⋅ v
 #     1.152 ns (0 allocations: 0 bytes)
 #@btime squared_length($t_col)
 
-near_zero(v::SVector{3,MyFloat}) = squared_length(v) < 1e-5
+near_zero(v::SVector{3,Float32}) = squared_length(v) < 1e-5
 #@btime near_zero($t_col) # 1.382 ns (0 allocations: 0 bytes)
 
 # Test images
@@ -107,17 +98,17 @@ end
 
 gradient(200,100)
 
-rgb(v::SVector{3,MyFloat}) = RGB{MyFloat}(v[1], v[2], v[3])
+rgb(v::SVector{3,Float32}) = RGB{Float32}(v[1], v[2], v[3])
 #rgb(v::Vec3) = RGB{MyFloat}(v...)
 #@btime rgb($t_col) # 289.914 ns (4 allocations: 80 bytes)
 
-rgb_gamma2(v::SVector{3,MyFloat}) = RGB{MyFloat}(sqrt.(v)...)
+rgb_gamma2(v::SVector{3,Float32}) = RGB{Float32}(sqrt.(v)...)
 
 #@btime rgb_gamma2($t_col) # 454.766 ns (11 allocations: 256 bytes)
 
 struct Ray
-	origin::SVector{3, MyFloat} # Point 
-	dir::SVector{3, MyFloat} # Vec3 # direction (unit vector)
+	origin::SVector{3, Float32} # Point 
+	dir::SVector{3, Float32} # Vec3 # direction (unit vector)
 end
 
 # interpolates between blue and white
@@ -135,7 +126,7 @@ t_ray1 = Ray(p_zero, v3_minusY)
 # 	r.origin .+ t .* r.dir
 # end
 
-function point(r::Ray, t::MyFloat)
+function point(r::Ray, t::Float32)
 	r.origin .+ t .* r.dir
 end
 
@@ -241,7 +232,7 @@ function main(nx::Int, ny::Int, scene)
 	vertical = @SVector[0f0,2f0,0f0]
 	origin = @SVector[0,0,0]
 	
-	img = zeros(RGB{MyFloat}, ny, nx)
+	img = zeros(RGB{Float32}, ny, nx)
 	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
 		u = j/nx
 		v = (ny-i)/ny # Y-up!
@@ -325,7 +316,7 @@ const _y_up = @SVector[0f0,1f0,0f0]
 
 "Record a hit between a ray and an object's surface"
 struct HitRecord
-	t::MyFloat # vector from the ray's origin to the intersection with a surface. 
+	t::Float32 # vector from the ray's origin to the intersection with a surface. 
 	
 	# If t==Inf32, there was no hit, and all following values are undefined!
 	#
@@ -343,7 +334,7 @@ end
 
 struct Sphere <: Hittable
 	center::SVector{3,Float32}
-	radius::MyFloat
+	radius::Float32
 	mat::Material
 end
 
@@ -399,7 +390,7 @@ end
 
 const _no_hit = HitRecord()
 
-function hit(s::Sphere, r::Ray, tmin::MyFloat, tmax::MyFloat)#::Option{HitRecord} # the return type seems to cause excessive allocations
+function hit(s::Sphere, r::Ray, tmin::Float32, tmax::Float32)#::Option{HitRecord} # the return type seems to cause excessive allocations
     oc = r.origin - s.center
     a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
     half_b = oc ⋅ r.dir
@@ -428,8 +419,8 @@ struct HittableList <: Hittable
 end
 
 #"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
-function hit(hittables::HittableList, r::Ray, tmin::MyFloat,
-			 tmax::MyFloat)::HitRecord
+function hit(hittables::HittableList, r::Ray, tmin::Float32,
+			 tmax::Float32)::HitRecord
     closest = tmax # closest t so far
     rec = _no_hit
     for h in hittables.list
@@ -448,7 +439,7 @@ color_vec3_in_rgb(v::SVector{3,Float32}) = 0.5normalize(v) + @SVector[0.5f,0.5f,
 
 mutable struct Metal<:Material
 	albedo::SVector{3,Float32}
-	fuzz::MyFloat # how big the sphere used to generate fuzzy reflection rays. 0=none
+	fuzz::Float32 # how big the sphere used to generate fuzzy reflection rays. 0=none
 	Metal(a,f=0.0) = new(a,f)
 end
 
@@ -495,7 +486,7 @@ mutable struct Camera
 	u::SVector{3,Float32}
 	v::SVector{3,Float32}
 	w::SVector{3,Float32}
-	lens_radius::MyFloat
+	lens_radius::Float32
 end
 
 """
@@ -526,7 +517,7 @@ default_camera()
 
 #md"# Render
 
-function get_ray(c::Camera, s::MyFloat, t::MyFloat)
+function get_ray(c::Camera, s::Float32, t::Float32)
 	rd = SVector{2,Float32}(c.lens_radius * random_vec2_in_disk())
 	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
@@ -584,7 +575,7 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 	image_height = convert(Int64, floor(image_width / aspect_ratio))
 
 	# Render
-	img = zeros(RGB{MyFloat}, image_height, image_width)
+	img = zeros(RGB{Float32}, image_height, image_width)
 	# Compared to C++, Julia is:
 	# 1. column-major, i.e. iterate 1 column at a time, so invert i,j compared to C++
 	# 2. 1-based, so no need to subtract 1 from image_width, etc.
@@ -616,7 +607,8 @@ end
 #  24.842 ms (527738 allocations: 16.63 MiB)
 # Don't initialize unnecessary elements in HitRecord(): 
 #  14.862 ms (118745 allocations: 4.15 MiB)  (but computer was busy...)
-#
+# Replace MyFloat by Float32:
+#  11.792 ms ( 61551 allocations: 2.88 MiB)
 render(scene_2_spheres(), default_camera(), 96, 16)
 
 render(scene_4_spheres(), default_camera(), 96, 16)
@@ -634,7 +626,7 @@ render(scene_4_spheres(), default_camera(), 96, 16)
 # 	Args:
 # 		refraction_ratio: incident refraction index divided by refraction index of 
 # 			hit surface. i.e. η/η′ in the figure above"""
-function refract(dir::SVector{3,Float32}, n⃗::SVector{3,Float32}, refraction_ratio::MyFloat)
+function refract(dir::SVector{3,Float32}, n⃗::SVector{3,Float32}, refraction_ratio::Float32)
 	cosθ = min(-dir ⋅ n⃗, 1)
 	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
 	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗
@@ -650,10 +642,10 @@ t_refract_narrowerθ = refract(SVector{3,Float32}(0.6,-0.8,0), SVector{3,Float32
 @assert isapprox(t_refract_narrowerθ, SVector{3,Float32}(0.3, -0.953939, 0.0); atol=1e-3)
 
 mutable struct Dielectric <: Material
-	ir::MyFloat # index of refraction, i.e. η.
+	ir::Float32 # index of refraction, i.e. η.
 end
 
-function reflectance(cosθ::MyFloat, refraction_ratio::MyFloat)
+function reflectance(cosθ::Float32, refraction_ratio::Float32)
 	# Use Schlick's approximation for reflectance.
 	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
 	r0 = (1f0-refraction_ratio) / (1f0+refraction_ratio)
@@ -774,6 +766,8 @@ t_cam = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 20.0
 # Don't specify return value of Option{HitRecord} in hit()
 # Don't initialize unnecessary elements in HitRecord(): 
 #    38.961 ms (   70681 allocations: 1.96 MiB) # WORSE, probably because we're writing a lot more to stack...?
+# Replace MyFloat by Float32:
+#    36.726 ms (13889 allocations: 724.09 KiB)
 render(scene_random_spheres(), t_cam, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -788,7 +782,9 @@ render(scene_random_spheres(), t_cam, 96, 1)
 # Don't specify return value of Option{HitRecord} in hit()
 # Don't initialize unnecessary elements in HitRecord(): 
 #    5.016 s (2056817 allocations: 88.61 MiB) #  WORSE, probably because we're writing a lot more to stack...?
-#render(scene_random_spheres(), t_cam, 200, 32) 
+# Replace MyFloat by Float32:
+#    5.185 s (1819234 allocations: 83.55 MiB) # Increase of 1% is probably noise
+render(scene_random_spheres(), t_cam, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -800,9 +796,9 @@ render(scene_random_spheres(), t_cam, 96, 1)
 # Don't initialize unnecessary elements in HitRecord(): 
 # Took ~4.1 hours:
 #   14723.339976 seconds (5.45 G allocations: 243.044 GiB, 0.11% gc time) # WORSE, probably because we're writing a lot more to stack...?
-
+# Replace MyFloat by Float32:
+#   TBA
 @time render(scene_random_spheres(), t_cam, 1920, 1000)
-
 
 t_lookfrom = @SVector[3.0f0,3.0f0,2.0f0]
 t_lookat = @SVector[0.0f0,0.0f0,-1.0f0]
@@ -826,11 +822,11 @@ t_cam = default_camera(t_lookfrom, t_lookat, @SVector[0.0f0,1.0f0,0.0f0], 20.0f0
 #   56.778 ms (1009344 allocations: 20.56 MiB)
 # Using convert(Float32, ...) instead of MyFloat(...):
 #   23.870 ms (210890 allocations: 8.37 MiB)
-#render(scene_diel_spheres(), t_cam, 96, 16)
+# Replace MyFloat by Float32:
+#   22.390 ms (153918 allocations: 7.11 MiB)
+@btime render(scene_diel_spheres(), t_cam, 96, 16)
 
-using Profile
-Profile.clear_malloc_data()
-
-render(scene_2_spheres(), default_camera(), 96, 16)
-#render(scene_random_spheres(), t_cam, 200, 32) 
+# using Profile
+# Profile.clear_malloc_data()
+# render(scene_2_spheres(), default_camera(), 96, 16)
 
