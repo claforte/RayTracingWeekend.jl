@@ -217,7 +217,7 @@ end
 #    6.539 ms (80002 allocations: 1.75 MiB)
 # Lots more optimizations, including @inline of low-level functions:
 # 161.546 μs (     2 allocations: 234.45 KiB)
-@btime main(200,100, skycolor) 
+main(200,100, skycolor) 
 
 #md"# Chapter 5: Add a sphere"
 
@@ -266,7 +266,7 @@ end
 	end
 end
 
-@btime main(200,100,sphere_scene2)  # 262.286 μs (2 allocations: 234.45 KiB)
+main(200,100,sphere_scene2)  # 262.286 μs (2 allocations: 234.45 KiB)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -535,6 +535,9 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 
 	# Render
 	img = zeros(RGB{Float32}, image_height, image_width)
+	f32_image_width = convert(Float32, image_width)
+	f32_image_height = convert(Float32, image_height)
+	
 	# Compared to C++, Julia:
 	# 1. is column-major, elements in a column are contiguous in memory
 	#    this is the opposite to C++.
@@ -548,7 +551,7 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 		accum_color = @SVector[0f0,0f0,0f0]
 		u = convert(Float32, j/image_width)
 		v = convert(Float32, (image_height-i)/image_height) # i is Y-down, v is Y-up!
-
+		
 		for s in 1:n_samples
 			if s == 1 # 1st sample is always centered
 				δu = 0f0; δv = 0f0
@@ -556,8 +559,8 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 				# Supersampling antialiasing.
 				# claforte: I think the C++ version had a bug, the rand offset was
 				# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-				δu = convert(Float32, (rand()-0.5f0) / image_width)
-				δv = convert(Float32, (rand()-0.5f0) / image_height)
+				δu = (rand(Float32)-0.5f0) / f32_image_width
+				δv = (rand(Float32)-0.5f0) / f32_image_height
 			end
 			ray = get_ray(cam, u+δu, v+δv)
 			accum_color += ray_color(ray, scene)
@@ -589,11 +592,13 @@ end
 # ... sticking with `for i in 1:image_height, j in 1:image_width # iterate over each row` for now...
 # Using `get_ray(cam, u+δu, v+δv)` (fixes minor bug, extract constants outside inner loop):
 # ... performance appears equivalent, maybe a tiny bit faster on avg (1%?)
-@btime render(scene_2_spheres(), default_camera(), 96, 16) # 16 samples
+render(scene_2_spheres(), default_camera(), 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
 # Iterate over each row: 500.334 μs
-@btime render(scene_2_spheres(), default_camera(), 96, 1) # 1 sample
+# With Rand(Float32) everywhere:
+#   489.745 μs (3758 allocations: 237.02 KiB)
+render(scene_2_spheres(), default_camera(), 96, 1) # 1 sample
 
 
 render(scene_4_spheres(), default_camera(), 96, 16)
@@ -644,7 +649,7 @@ end
 	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0f0)
 	sinθ = √(1.0f0 - cosθ^2)
 	cannot_refract = refraction_ratio * sinθ > 1.0
-	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand()
+	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand(Float32)
 		dir = reflect(r_in.dir, rec.n⃗)
 	else
 		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
@@ -694,15 +699,15 @@ function scene_random_spheres()::HittableList # dielectric spheres
 						  Lambertian(@SVector[0.5f0,0.5f0,0.5f0])))
 
 	for a in -11:10, b in -11:10
-		choose_mat = rand()
-		center = @SVector[a + 0.9f0*rand(), 0.2f0, b + 0.90f0*rand()]
+		choose_mat = rand(Float32)
+		center = @SVector[a + 0.9f0*rand(Float32), 0.2f0, b + 0.90f0*rand(Float32)]
 
 		# skip spheres too close?
 		if norm(center - @SVector[4f0,0.2f0,0f0]) < 0.9f0 continue end 
 			
 		if choose_mat < 0.8f0
 			# diffuse
-			albedo = @SVector[rand() for i ∈ 1:3] .* @SVector[rand() for i ∈ 1:3]
+			albedo = @SVector[rand(Float32) for i ∈ 1:3] .* @SVector[rand(Float32) for i ∈ 1:3]
 			push!(spheres, Sphere(center, 0.2f0, Lambertian(albedo)))
 		elseif choose_mat < 0.95f0
 			# metal
@@ -759,7 +764,9 @@ t_cam1 = default_camera(t_lookfrom1, t_lookat1, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #    36.726 ms (13889 allocations: 724.09 KiB)
 # @inline lots of stuff:
 #    14.690 ms (13652 allocations: 712.98 KiB)
-@btime render(scene_random_spheres(), t_cam1, 96, 1)
+# rand(Float32) to avoid Float64s:
+#    14.659 ms (13670 allocations: 713.84 KiB)
+render(scene_random_spheres(), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
 # after lots of optimizations, up to switching to Float32 + reducing allocations using rand_vec3!(): 
@@ -779,6 +786,8 @@ t_cam1 = default_camera(t_lookfrom1, t_lookat1, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #    5.040 s (1832052 allocations: 84.13 MiB)
 # @inline lots of stuff:
 #    2.110 s (1823044 allocations: 83.72 MiB)
+# rand(Float32) to avoid Float64s:
+#    2.063 s (1777985 allocations: 81.66 MiB)
 render(scene_random_spheres(), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
@@ -794,7 +803,9 @@ render(scene_random_spheres(), t_cam1, 200, 32)
 # Replace MyFloat by Float32:
 # Lots of other optimizations including @inline lots of stuff: (1.67 hour)
 #    6018.101653 seconds (5.39 G allocations: 241.139 GiB, 0.21% gc time)
-#render(scene_random_spheres(), t_cam1, 1920, 1000)
+# rand(Float32) to avoid Float64s: (expected to provide 2.2% speed up)
+#    TBA
+#@time render(scene_random_spheres(), t_cam1, 1920, 1000)
 
 t_lookfrom2 = @SVector[3.0f0,3.0f0,2.0f0]
 t_lookat2 = @SVector[0.0f0,0.0f0,-1.0f0]
@@ -824,7 +835,9 @@ t_cam2 = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #   20.241 ms (153792 allocations: 7.10 MiB)
 # @inline lots of stuff:
 #   18.065 ms (153849 allocations: 7.10 MiB)
-#render(scene_diel_spheres(), t_cam2, 96, 16)
+# rand(Float32) to avoid Float64s:
+#   16.035 ms (153777 allocations: 7.10 MiB)
+render(scene_diel_spheres(), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()
