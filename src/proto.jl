@@ -84,7 +84,6 @@ gradient(200,100)
 @inline rgb_gamma2(v::SVector{3,Float32}) = RGB{Float32}(sqrt.(v)...)
 
 #@btime rgb_gamma2($t_col) # 3.837 ns (0 allocations: 0 bytes)
-@code_native rgb_gamma2(t_col)
 
 struct Ray
 	origin::SVector{3, Float32} # Point 
@@ -140,7 +139,7 @@ end
 @inline random_between(min=0.0f0, max=1.0f0) = rand(Float32)*(max-min) + min # equiv to random_double()
 #@btime random_between(50f0, 100f0) # 4.519 ns (0 allocations: 0 bytes)
 
-@inline random_vec3(min::Float32, max::Float32) = @SVector[random_between(min, max) for i ∈ 1:3]
+@inline random_vec3(min, max) = @SVector[random_between(min, max) for i ∈ 1:3]
 
 # Before optimization:
 #   352.322 ns (6 allocations: 224 bytes)
@@ -148,10 +147,12 @@ end
 #   179.684 ns (5 allocations: 112 bytes)
 # Return @SVector[] instead of Vec3():
 #    12.557 ns (0 allocations: 0 bytes)
+# @inline lots of stuff:
+#    10.440 ns (0 allocations: 0 bytes)
 #@btime random_vec3(-1.0f0,1.0f0)
 
-@inline random_vec2(min::Float32, max::Float32) = @SVector[random_between(min, max) for i ∈ 1:2]
-#@btime random_vec2(-1.0f0,1.0f0) # 8.536 ns (0 allocations: 0 bytes)
+@inline random_vec2(min, max) = @SVector[random_between(min, max) for i ∈ 1:2]
+#@btime random_vec2(-1.0f0,1.0f0) # 7.702 ns (0 allocations: 0 bytes)
 
 @inline function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
 	while true
@@ -161,7 +162,7 @@ end
 		end
 	end
 end
-#@btime random_vec3_in_sphere() # 46.587 ns (0 allocations: 0 bytes)
+#@btime random_vec3_in_sphere() # 35.857 ns (0 allocations: 0 bytes)
 
 squared_length(random_vec3_in_sphere())
 
@@ -595,6 +596,8 @@ end
 # ... sticking with `for i in 1:image_height, j in 1:image_width # iterate over each row` for now...
 # Using `get_ray(cam, u+δu, v+δv)` (fixes minor bug, extract constants outside inner loop):
 # ... performance appears equivalent, maybe a tiny bit faster on avg (1%?)
+# Re-measured:
+#   8.077 ms (61610 allocations: 2.88 MiB)
 render(scene_2_spheres(), default_camera(), 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
@@ -769,6 +772,8 @@ t_cam1 = default_camera(t_lookfrom1, t_lookat1, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #    14.690 ms (13652 allocations: 712.98 KiB)
 # rand(Float32) to avoid Float64s:
 #    14.659 ms (13670 allocations: 713.84 KiB)
+# Re-measured:
+#    14.069 ms (13677 allocations: 714.22 KiB)
 render(scene_random_spheres(), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -840,7 +845,7 @@ t_cam2 = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #   18.065 ms (153849 allocations: 7.10 MiB)
 # rand(Float32) to avoid Float64s:
 #   16.035 ms (153777 allocations: 7.10 MiB)
-render(scene_diel_spheres(), t_cam2, 96, 16)
+@btime render(scene_diel_spheres(), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()
