@@ -19,7 +19,9 @@ So I:
 - plan to pre-allocate groups of rays into tensors to support higher parallelism.
 - don't use abstract types, because I couldn't get them to work fast. Instead I reuse `StaticArrays{3,Float32}` for both `Vec3` and `Color`, etc. (I'm sure there's a cleaner way - if you know it, please tell me!)
 
-If you're interested in the performance details, please see the git history and comments in `proto.jl`, where I used `@btime` and `julia --track-allocation=user` to optimize what were the most obvious performance bottlenecks. Please note that code is extremely messy, I'm mainly working on this during week-ends and I plan to clean it up after I optimize the code further. 
+If you're interested in the performance details, please:
+1. participate in this discussion: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c/72958/3
+2. see the git history and comments in `proto.jl`, where I used `@btime` and `julia --track-allocation=user` to optimize what were the most obvious performance bottlenecks. Please note that this code is still extremely messy, I'm mainly working on this during week-ends and I plan to clean it up after I optimize the code further. 
 
 # Known issues
 

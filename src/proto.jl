@@ -66,7 +66,7 @@ ex2
 # The "Hello World" of graphics
 function gradient(nx::Int, ny::Int)
 	img = zeros(RGB{Float32}, ny, nx)
-	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
+	for j in 1:nx, i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
 		x = j; y = (ny-i);
 		r = x/nx
 		g = y/ny
@@ -197,7 +197,7 @@ function main(nx::Int, ny::Int, scene)
 	origin = @SVector[0,0,0]
 	
 	img = zeros(RGB{Float32}, ny, nx)
-	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
+	for j in 1:nx, i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
 		u = j/nx
 		v = (ny-i)/ny # Y-up!
 		ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
@@ -217,7 +217,7 @@ end
 #    6.539 ms (80002 allocations: 1.75 MiB)
 # Lots more optimizations, including @inline of low-level functions:
 # 161.546 μs (     2 allocations: 234.45 KiB)
-main(200,100, skycolor) 
+@btime main(200,100, skycolor) 
 
 #md"# Chapter 5: Add a sphere"
 
@@ -535,22 +535,31 @@ function render(scene::HittableList, cam::Camera, image_width=400,
 
 	# Render
 	img = zeros(RGB{Float32}, image_height, image_width)
-	# Compared to C++, Julia is:
-	# 1. column-major, i.e. iterate 1 column at a time, so invert i,j compared to C++
-	# 2. 1-based, so no need to subtract 1 from image_width, etc.
-	# 3. The array is Y-down, but `v` is Y-up 
-	for i in 1:image_height, j in 1:image_width
+	# Compared to C++, Julia:
+	# 1. is column-major, elements in a column are contiguous in memory
+	#    this is the opposite to C++.
+	# 2. uses i=row, j=column as a convention.
+	# 3. is 1-based, so no need to subtract 1 from image_width, etc.
+	# 4. The array is Y-down, but `v` is Y-up 
+	# Usually iterating over 1 column at a time is faster, but
+	# surprisingly, in the first test below, the opposite pattern arises...
+	#for j in 1:image_width, i in 1:image_height # iterate over each column (SLOWER?!)
+	for i in 1:image_height, j in 1:image_width # iterate over each row (FASTER?!)
 		accum_color = @SVector[0f0,0f0,0f0]
+		u = convert(Float32, j/image_width)
+		v = convert(Float32, (image_height-i)/image_height) # i is Y-down, v is Y-up!
+
 		for s in 1:n_samples
-			u = convert(Float32, j/image_width)
-			v = convert(Float32, (image_height-i)/image_height) # i is Y-down, v is Y-up!
-			if s != 1 # 1st sample is always centered, for 1-sample/pixel
+			if s == 1 # 1st sample is always centered
+				δu = 0f0; δv = 0f0
+			else
+				# Supersampling antialiasing.
 				# claforte: I think the C++ version had a bug, the rand offset was
 				# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-				u += convert(Float32, (rand()-0.5f0) / image_width)
-				v += convert(Float32 ,(rand()-0.5f0) / image_height)
+				δu = convert(Float32, (rand()-0.5f0) / image_width)
+				δv = convert(Float32, (rand()-0.5f0) / image_height)
 			end
-			ray = get_ray(cam, u, v)
+			ray = get_ray(cam, u+δu, v+δv)
 			accum_color += ray_color(ray, scene)
 		end
 		img[i,j] = rgb_gamma2(accum_color / n_samples)
@@ -572,9 +581,20 @@ end
 #  11.545 ms ( 61654 allocations: 2.88 MiB)
 # with mutable HitRecord
 #  11.183 ms ( 61678 allocations: 2.88 MiB) (insignificant?)
-# @inline tons of stuff:
+# @inline tons of stuff. Note: render() uses `for i in 1:image_height, j in 1:image_width`,
+#    i.e. iterating 1 row at time!
 #   8.129 ms ( 61660 allocations: 2.88 MiB)
-render(scene_2_spheres(), default_camera(), 96, 16)
+# Using in render(): `for j in 1:image_width, i in 1:image_height # iterate over each column`
+#  10.489 ms ( 61722 allocations: 2.88 MiB) (consistently slower!)
+# ... sticking with `for i in 1:image_height, j in 1:image_width # iterate over each row` for now...
+# Using `get_ray(cam, u+δu, v+δv)` (fixes minor bug, extract constants outside inner loop):
+# ... performance appears equivalent, maybe a tiny bit faster on avg (1%?)
+@btime render(scene_2_spheres(), default_camera(), 96, 16) # 16 samples
+
+# Iterate over each column: 614.820 μs
+# Iterate over each row: 500.334 μs
+@btime render(scene_2_spheres(), default_camera(), 96, 1) # 1 sample
+
 
 render(scene_4_spheres(), default_camera(), 96, 16)
 
@@ -739,7 +759,7 @@ t_cam1 = default_camera(t_lookfrom1, t_lookat1, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #    36.726 ms (13889 allocations: 724.09 KiB)
 # @inline lots of stuff:
 #    14.690 ms (13652 allocations: 712.98 KiB)
-render(scene_random_spheres(), t_cam1, 96, 1)
+@btime render(scene_random_spheres(), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
 # after lots of optimizations, up to switching to Float32 + reducing allocations using rand_vec3!(): 
@@ -772,7 +792,7 @@ render(scene_random_spheres(), t_cam1, 200, 32)
 # Took ~4.1 hours:
 #   14723.339976 seconds (5.45 G allocations: 243.044 GiB, 0.11% gc time) # WORSE, probably because we're writing a lot more to stack...?
 # Replace MyFloat by Float32:
-# Lots of other optimizations including @inline lots of stuff:
+# Lots of other optimizations including @inline lots of stuff: (1.67 hour)
 #    6018.101653 seconds (5.39 G allocations: 241.139 GiB, 0.21% gc time)
 #render(scene_random_spheres(), t_cam1, 1920, 1000)
 
