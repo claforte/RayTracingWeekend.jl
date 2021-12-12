@@ -47,7 +47,7 @@ squared_length(v::SVector{3,Float32}) = v ⋅ v
 #     1.152 ns (0 allocations: 0 bytes)
 #@btime squared_length($t_col)
 
-near_zero(v::SVector{3,Float32}) = squared_length(v) < 1e-5
+@inline near_zero(v::SVector{3,Float32}) = squared_length(v) < 1e-5
 #@btime near_zero($t_col) # 1.382 ns (0 allocations: 0 bytes)
 
 # Test images
@@ -82,7 +82,7 @@ rgb(v::SVector{3,Float32}) = RGB{Float32}(v[1], v[2], v[3])
 #rgb(v::Vec3) = RGB{MyFloat}(v...)
 #@btime rgb($t_col) # 289.914 ns (4 allocations: 80 bytes)
 
-rgb_gamma2(v::SVector{3,Float32}) = RGB{Float32}(sqrt.(v)...)
+@inline rgb_gamma2(v::SVector{3,Float32}) = RGB{Float32}(sqrt.(v)...)
 
 #@btime rgb_gamma2($t_col) # 454.766 ns (11 allocations: 256 bytes)
 
@@ -97,16 +97,13 @@ _v3_minusY = @SVector[0.0f0,-1.0f0,0.0f0]
 _t_ray1 = Ray(_origin, _v3_minusY)
 #@btime Ray($_origin, $_v3_minusY) # 6.341 ns (0 allocations: 0 bytes)
 
-
 # equivalent to C++'s ray.at()
-function point(r::Ray, t::Float32)
-	r.origin .+ t .* r.dir
-end
+@inline point(r::Ray, t::Float32) = r.origin .+ t .* r.dir
 #@btime point($_t_ray1, 0.5f0) # 1.392 ns (0 allocations: 0 bytes)
 
 #md"# Chapter 4: Rays, simple camera, and background"
 
-function skycolor(ray::Ray)
+@inline function skycolor(ray::Ray)
 	white = @SVector[1.0f0,1.0f0,1.0f0]
 	skyblue = @SVector[0.5f0,0.7f0,1.0f0]
 	t = 0.5f0(ray.dir[2] + 1.0f0)
@@ -137,12 +134,10 @@ end
 # md"""# Random vectors
 # C++'s section 8.1"""
 
-random_between(min=0.0f0, max=1.0f0) = rand(Float32)*(max-min) + min # equiv to random_double()
+@inline random_between(min=0.0f0, max=1.0f0) = rand(Float32)*(max-min) + min # equiv to random_double()
 #@btime random_between(50f0, 100f0) # 4.519 ns (0 allocations: 0 bytes)
 
-function random_vec3(min::Float32, max::Float32)
-	@SVector[random_between(min, max) for i in 1:3]
-end
+@inline random_vec3(min::Float32, max::Float32) = @SVector[random_between(min, max) for i ∈ 1:3]
 
 # Before optimization:
 #   352.322 ns (6 allocations: 224 bytes)
@@ -152,12 +147,10 @@ end
 #    12.557 ns (0 allocations: 0 bytes)
 #@btime random_vec3(-1.0f0,1.0f0)
 
-function random_vec2(min::Float32, max::Float32)
-	@SVector[random_between(min, max) for i in 1:2]
-end
+@inline random_vec2(min::Float32, max::Float32) = @SVector[random_between(min, max) for i ∈ 1:2]
 #@btime random_vec2(-1.0f0,1.0f0) # 8.536 ns (0 allocations: 0 bytes)
 
-function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
+@inline function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
 	while true
 		p = random_vec3(-1f0, 1f0)
 		if p⋅p <= 1
@@ -170,7 +163,7 @@ end
 squared_length(random_vec3_in_sphere())
 
 "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
-random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
+@inline random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
 #@btime random_vec3_on_sphere()
 
 # Before optim:
@@ -182,7 +175,7 @@ random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
 random_vec3_on_sphere()
 norm(random_vec3_on_sphere())
 
-function random_vec2_in_disk() # equiv to random_in_unit_disk()
+@inline function random_vec2_in_disk() # equiv to random_in_unit_disk()
 	while true
 		p = random_vec2(-1f0, 1f0)
 		if p⋅p <= 1
@@ -222,11 +215,13 @@ end
 #   10.358 ms (220010 allocations: 5.42 MiB) # at this stage, rgb() is most likely the culprit..
 # After replacing Color,Vec3 by @SVector:
 #    6.539 ms (80002 allocations: 1.75 MiB)
+# Lots more optimizations, including @inline of low-level functions:
+# 161.546 μs (     2 allocations: 234.45 KiB)
 main(200,100, skycolor) 
 
 #md"# Chapter 5: Add a sphere"
 
-function hit_sphere1(center::SVector{3,Float32}, radius::Float32, r::Ray)
+@inline function hit_sphere1(center::SVector{3,Float32}, radius::Float32, r::Ray)
 	oc = r.origin - center
 	a = r.dir ⋅ r.dir
 	b = 2oc ⋅ r.dir
@@ -235,7 +230,7 @@ function hit_sphere1(center::SVector{3,Float32}, radius::Float32, r::Ray)
 	discriminant > 0
 end
 
-function sphere_scene1(r::Ray)
+@inline function sphere_scene1(r::Ray)
 	if hit_sphere1(@SVector[0f0,0f0,-1f0], 0.5f0, r) # sphere of radius 0.5 centered at z=-1
 		return @SVector[1f0,0f0,0f0] # red
 	else
@@ -243,11 +238,11 @@ function sphere_scene1(r::Ray)
 	end
 end
 
-main(200,100,sphere_scene1) # 10.310 ms (220010 allocations: 5.42 MiB)
+main(200,100,sphere_scene1) # 227.851 μs (2 allocations: 234.45 KiB)
 
 #md"# Chapter 6: Surface normals and multiple objects"
 
-function hit_sphere2(center::SVector{3,Float32}, radius::Float32, r::Ray)
+@inline function hit_sphere2(center::SVector{3,Float32}, radius::Float32, r::Ray)
 	oc = r.origin - center
 	a = r.dir ⋅ r.dir
 	b = 2oc ⋅ r.dir
@@ -260,7 +255,7 @@ function hit_sphere2(center::SVector{3,Float32}, radius::Float32, r::Ray)
 	end
 end
 
-function sphere_scene2(r::Ray)
+@inline function sphere_scene2(r::Ray)
 	sphere_center = SVector{3,Float32}(0f0,0f0,-1f0)
 	t = hit_sphere2(sphere_center, 0.5f0, r) # sphere of radius 0.5 centered at z=-1
 	if t > 0f0
@@ -271,7 +266,7 @@ function sphere_scene2(r::Ray)
 	end
 end
 
-main(200,100,sphere_scene2)  # 6.620 ms (80002 allocations: 1.75 MiB)
+@btime main(200,100,sphere_scene2)  # 262.286 μs (2 allocations: 234.45 KiB)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -298,8 +293,8 @@ mutable struct HitRecord
 	front_face::Bool
 	mat::Material
 
-	HitRecord() = new(Inf32) # no hit!
-	HitRecord(t,p,n⃗,front_face,mat) = new(t,p,n⃗,front_face,mat)
+	@inline HitRecord() = new(Inf32) # no hit!
+	@inline HitRecord(t,p,n⃗,front_face,mat) = new(t,p,n⃗,front_face,mat)
 end
 
 struct Sphere <: Hittable
@@ -313,7 +308,7 @@ end
 # """
 
 """Equivalent to `hit_record.set_face_normal()`"""
-function ray_to_HitRecord(t, p, outward_n⃗, r_dir::SVector{3,Float32}, mat::Material)
+@inline function ray_to_HitRecord(t, p, outward_n⃗, r_dir::SVector{3,Float32}, mat::Material)
 	front_face = r_dir ⋅ outward_n⃗ < 0
 	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
 	rec = HitRecord(t,p,n⃗,front_face,mat)
@@ -325,7 +320,7 @@ struct Scatter
 	
 	# claforte: TODO: rename to "absorbed?", i.e. not reflected/refracted?
 	reflected::Bool # whether the scattered ray was reflected, or fully absorbed
-	Scatter(r,a,reflected=true) = new(r,a,reflected)
+	@inline Scatter(r,a,reflected=true) = new(r,a,reflected)
 end
 
 #"Diffuse material"
@@ -337,7 +332,7 @@ end
 
 	See [diagram](https://raytracing.github.io/books/RayTracingInOneWeekend.html#metal/mirroredlightreflection)"""
 #reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = normalize(v - (2v⋅n⃗)*n⃗) # claforte: normalize not needed?
-reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = v - (2v⋅n⃗)*n⃗
+@inline reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = v - (2v⋅n⃗)*n⃗
 
 @assert reflect(@SVector[0.6f0,-0.8f0,0f0], @SVector[0f0,1f0,0f0]) == @SVector[0.6f0,0.8f0,0f00] # diagram's example
 
@@ -347,7 +342,7 @@ reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = v - (2v⋅n⃗)*n⃗
 		rec: the HitRecord of the surface from which to scatter the ray.
 
 	Return missing if it's fully absorbed. """
-function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
+@inline function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
 	scatter_dir = rec.n⃗ + random_vec3_on_sphere()
 	if near_zero(scatter_dir) # Catch degenerate scatter direction
 		scatter_dir = rec.n⃗ 
@@ -361,7 +356,7 @@ end
 
 const _no_hit = HitRecord()
 
-function hit(s::Sphere, r::Ray, tmin::Float32, tmax::Float32)#::Option{HitRecord} # the return type seems to cause excessive allocations
+@inline function hit(s::Sphere, r::Ray, tmin::Float32, tmax::Float32)#::Option{HitRecord} # the return type seems to cause excessive allocations
     oc = r.origin - s.center
     a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
     half_b = oc ⋅ r.dir
@@ -390,7 +385,7 @@ struct HittableList <: Hittable
 end
 
 #"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
-function hit(hittables::HittableList, r::Ray, tmin::Float32, tmax::Float32)# ::HitRecord
+@inline function hit(hittables::HittableList, r::Ray, tmin::Float32, tmax::Float32)# ::HitRecord
     closest = tmax # closest t so far
     rec = _no_hit
     for h in hittables.list
@@ -403,17 +398,17 @@ function hit(hittables::HittableList, r::Ray, tmin::Float32, tmax::Float32)# ::H
     rec
 end
 
-color_vec3_in_rgb(v::SVector{3,Float32}) = 0.5normalize(v) + @SVector[0.5f,0.5f,0.5f]
+@inline color_vec3_in_rgb(v::SVector{3,Float32}) = 0.5normalize(v) + @SVector[0.5f,0.5f,0.5f]
 
 #md"# Metal material"
 
 mutable struct Metal<:Material
 	albedo::SVector{3,Float32}
 	fuzz::Float32 # how big the sphere used to generate fuzzy reflection rays. 0=none
-	Metal(a,f=0.0) = new(a,f)
+	@inline Metal(a,f=0.0) = new(a,f)
 end
 
-function scatter(mat::Metal, r_in::Ray, rec::HitRecord)::Scatter
+@inline function scatter(mat::Metal, r_in::Ray, rec::HitRecord)::Scatter
 	reflected = normalize(reflect(r_in.dir, rec.n⃗) + mat.fuzz*random_vec3_on_sphere())
 	Scatter(Ray(rec.p, reflected), mat.albedo)
 end
@@ -487,7 +482,7 @@ default_camera()
 
 #md"# Render
 
-function get_ray(c::Camera, s::Float32, t::Float32)
+@inline function get_ray(c::Camera, s::Float32, t::Float32)
 	rd = SVector{2,Float32}(c.lens_radius * random_vec2_in_disk())
 	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
@@ -500,7 +495,7 @@ end
 
 	Args:
 		depth: how many more levels of recursive ray bounces can we still compute?"""
-function ray_color(r::Ray, world::HittableList, depth=4)
+@inline function ray_color(r::Ray, world::HittableList, depth=4)
     if depth <= 0
 		return @SVector[0f0,0f0,0f0]
 	end
@@ -577,6 +572,8 @@ end
 #  11.545 ms ( 61654 allocations: 2.88 MiB)
 # with mutable HitRecord
 #  11.183 ms ( 61678 allocations: 2.88 MiB) (insignificant?)
+# @inline tons of stuff:
+#   8.129 ms ( 61660 allocations: 2.88 MiB)
 render(scene_2_spheres(), default_camera(), 96, 16)
 
 render(scene_4_spheres(), default_camera(), 96, 16)
@@ -594,7 +591,7 @@ render(scene_4_spheres(), default_camera(), 96, 16)
 # 	Args:
 # 		refraction_ratio: incident refraction index divided by refraction index of 
 # 			hit surface. i.e. η/η′ in the figure above"""
-function refract(dir::SVector{3,Float32}, n⃗::SVector{3,Float32}, refraction_ratio::Float32)
+@inline function refract(dir::SVector{3,Float32}, n⃗::SVector{3,Float32}, refraction_ratio::Float32)
 	cosθ = min(-dir ⋅ n⃗, 1)
 	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
 	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗
@@ -613,7 +610,7 @@ mutable struct Dielectric <: Material
 	ir::Float32 # index of refraction, i.e. η.
 end
 
-function reflectance(cosθ::Float32, refraction_ratio::Float32)
+@inline function reflectance(cosθ::Float32, refraction_ratio::Float32)
 	# Use Schlick's approximation for reflectance.
 	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
 	r0 = (1f0-refraction_ratio) / (1f0+refraction_ratio)
@@ -621,7 +618,7 @@ function reflectance(cosθ::Float32, refraction_ratio::Float32)
 	r0 + (1f0-r0)*((1f0-cosθ)^5)
 end
 
-function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
+@inline function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
 	attenuation = @SVector[1f0,1f0,1f0]
 	refraction_ratio = rec.front_face ? (1.0f0/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
 	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0f0)
@@ -636,7 +633,7 @@ function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
 end
 
 #"From C++: Image 15: Glass sphere that sometimes refracts"
-function scene_diel_spheres(left_radius=0.5f0)::HittableList # dielectric spheres
+@inline function scene_diel_spheres(left_radius=0.5f0)::HittableList # dielectric spheres
 	spheres = Sphere[]
 	
 	# small center sphere
@@ -740,6 +737,8 @@ t_cam1 = default_camera(t_lookfrom1, t_lookat1, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #    38.961 ms (   70681 allocations: 1.96 MiB) # WORSE, probably because we're writing a lot more to stack...?
 # Replace MyFloat by Float32:
 #    36.726 ms (13889 allocations: 724.09 KiB)
+# @inline lots of stuff:
+#    14.690 ms (13652 allocations: 712.98 KiB)
 render(scene_random_spheres(), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -758,6 +757,8 @@ render(scene_random_spheres(), t_cam1, 96, 1)
 #    5.185 s (1819234 allocations: 83.55 MiB) # Increase of 1% is probably noise
 # Remove normalize() in reflect() (that function assumes the inputs are normalized)
 #    5.040 s (1832052 allocations: 84.13 MiB)
+# @inline lots of stuff:
+#    2.110 s (1823044 allocations: 83.72 MiB)
 render(scene_random_spheres(), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
@@ -771,8 +772,9 @@ render(scene_random_spheres(), t_cam1, 200, 32)
 # Took ~4.1 hours:
 #   14723.339976 seconds (5.45 G allocations: 243.044 GiB, 0.11% gc time) # WORSE, probably because we're writing a lot more to stack...?
 # Replace MyFloat by Float32:
-#   TBA
-#render(scene_random_spheres(), t_cam, 1920, 1000)
+# Lots of other optimizations including @inline lots of stuff:
+#    6018.101653 seconds (5.39 G allocations: 241.139 GiB, 0.21% gc time)
+#render(scene_random_spheres(), t_cam1, 1920, 1000)
 
 t_lookfrom2 = @SVector[3.0f0,3.0f0,2.0f0]
 t_lookat2 = @SVector[0.0f0,0.0f0,-1.0f0]
@@ -800,7 +802,9 @@ t_cam2 = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #   22.390 ms (153918 allocations: 7.11 MiB)
 # Various other changes, e.g. remove unnecessary normalize
 #   20.241 ms (153792 allocations: 7.10 MiB)
-render(scene_diel_spheres(), t_cam2, 96, 16)
+# @inline lots of stuff:
+#   18.065 ms (153849 allocations: 7.10 MiB)
+#render(scene_diel_spheres(), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()
