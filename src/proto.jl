@@ -315,7 +315,7 @@ end
 @inline function ray_to_HitRecord(t, p, outward_n⃗, r_dir::SVector{3,Float32}, mat::Material)
 	front_face = r_dir ⋅ outward_n⃗ < 0
 	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
-	rec = HitRecord(t,p,n⃗,front_face,mat)
+	HitRecord(t,p,n⃗,front_face,mat)
 end
 
 struct Scatter
@@ -384,15 +384,13 @@ const _no_hit = HitRecord()
 	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
 end
 
-struct HittableList <: Hittable
-    list::Vector{Hittable}
-end
+const HittableList = Vector{Hittable}
 
 #"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
 @inline function hit(hittables::HittableList, r::Ray, tmin::Float32, tmax::Float32)# ::HitRecord
     closest = tmax # closest t so far
     rec = _no_hit
-    for h in hittables.list
+    for h in hittables
         temprec = hit(h, r, tmin, closest)
         if temprec !== _no_hit
             rec = temprec
@@ -421,7 +419,7 @@ end
 #md"# Scenes"
 
 #"Scene with 2 Lambertian spheres"
-function scene_2_spheres()::HittableList
+function scene_2_spheres()
 	spheres = Sphere[]
 	
 	# small center sphere
@@ -435,12 +433,12 @@ end
 #"""Scene with 2 Lambertian, 2 Metal spheres.
 #
 #	See https://raytracing.github.io/images/img-1.11-metal-shiny.png"""
-function scene_4_spheres()::HittableList
+function scene_4_spheres()
 	scene = scene_2_spheres()
 
 	# left and right Metal spheres
-	push!(scene.list, Sphere(@SVector[-1f0,0f0,-1f0], 0.5f0, Metal(@SVector[0.8f0,0.8f0,0.8f0], 0.3f0))) 
-	push!(scene.list, Sphere(@SVector[1f0,0f0,-1f0], 0.5f0, Metal(@SVector[0.8f0,0.6f0,0.2f0], 0.8f0)))
+	push!(scene, Sphere(@SVector[-1f0,0f0,-1f0], 0.5f0, Metal(@SVector[0.8f0,0.8f0,0.8f0], 0.3f0))) 
+	push!(scene, Sphere(@SVector[1f0,0f0,-1f0], 0.5f0, Metal(@SVector[0.8f0,0.6f0,0.2f0], 0.8f0)))
 	return scene
 end
 
@@ -664,7 +662,7 @@ end
 end
 
 #"From C++: Image 15: Glass sphere that sometimes refracts"
-@inline function scene_diel_spheres(left_radius=0.5f0)::HittableList # dielectric spheres
+@inline function scene_diel_spheres(left_radius=0.5f0) # dielectric spheres
 	spheres = Sphere[]
 	
 	# small center sphere
@@ -685,7 +683,7 @@ render(scene_diel_spheres(), default_camera(), 96, 16)
 
 #md"# Positioning camera"
 
-function scene_blue_red_spheres()::HittableList # dielectric spheres
+function scene_blue_red_spheres() # dielectric spheres
 	spheres = Sphere[]
 	R = cos(pi/4)
 	push!(spheres, Sphere(@SVector[-R,0f0,-1f0], R, Lambertian(@SVector[0f0,0f0,1f0]))) 
@@ -697,7 +695,7 @@ end
 
 #md"# Random spheres"
 
-function scene_random_spheres()::HittableList # dielectric spheres
+function scene_random_spheres() # dielectric spheres
 	spheres = Sphere[]
 
 	# ground 
@@ -796,7 +794,9 @@ render(scene_random_spheres(), t_cam1, 96, 1)
 #    2.110 s (1823044 allocations: 83.72 MiB)
 # rand(Float32) to avoid Float64s:
 #    2.063 s (1777985 allocations: 81.66 MiB)
-render(scene_random_spheres(), t_cam1, 200, 32) 
+# @inkydragon's "Use alias instead of new struct", i.e. `const HittableList = Vector{Hittable}`:
+#    1.934 s (1796954 allocations: 82.53 MiB)
+@btime render(scene_random_spheres(), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -845,7 +845,7 @@ t_cam2 = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 20.
 #   18.065 ms (153849 allocations: 7.10 MiB)
 # rand(Float32) to avoid Float64s:
 #   16.035 ms (153777 allocations: 7.10 MiB)
-@btime render(scene_diel_spheres(), t_cam2, 96, 16)
+render(scene_diel_spheres(), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()
