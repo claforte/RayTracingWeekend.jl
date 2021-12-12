@@ -78,13 +78,13 @@ end
 
 gradient(200,100)
 
-rgb(v::SVector{3,Float32}) = RGB{Float32}(v[1], v[2], v[3])
-#rgb(v::Vec3) = RGB{MyFloat}(v...)
-#@btime rgb($t_col) # 289.914 ns (4 allocations: 80 bytes)
+@inline rgb(v::SVector{3,Float32}) = RGB{Float32}(v...)
+#@btime rgb($t_col) # 1.182 ns (0 allocations: 0 bytes)
 
 @inline rgb_gamma2(v::SVector{3,Float32}) = RGB{Float32}(sqrt.(v)...)
 
-#@btime rgb_gamma2($t_col) # 454.766 ns (11 allocations: 256 bytes)
+#@btime rgb_gamma2($t_col) # 3.837 ns (0 allocations: 0 bytes)
+@code_native rgb_gamma2(t_col)
 
 struct Ray
 	origin::SVector{3, Float32} # Point 
@@ -95,11 +95,11 @@ end
 _origin = @SVector[0.0f0,0.0f0,0.0f0]
 _v3_minusY = @SVector[0.0f0,-1.0f0,0.0f0]
 _t_ray1 = Ray(_origin, _v3_minusY)
-#@btime Ray($_origin, $_v3_minusY) # 6.341 ns (0 allocations: 0 bytes)
+#@btime Ray($_origin, $_v3_minusY) # 6.161 ns (0 allocations: 0 bytes)
 
 # equivalent to C++'s ray.at()
 @inline point(r::Ray, t::Float32) = r.origin .+ t .* r.dir
-#@btime point($_t_ray1, 0.5f0) # 1.392 ns (0 allocations: 0 bytes)
+#@btime point($_t_ray1, 0.5f0) # 1.412 ns (0 allocations: 0 bytes)
 
 #md"# Chapter 4: Rays, simple camera, and background"
 
@@ -129,7 +129,10 @@ end
 #         1.402 ns (0 allocations: 0 bytes)
 # restore the rgb(), i.e. `@btime rgb(skycolor($t_ray1))`
 #   291.492 ns (4 allocations: 80 bytes)
-#@btime rgb(skycolor($t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
+# @inline a bunch of functions:
+#     1.412 ns (0 allocations: 0 bytes)
+#
+#@btime rgb(skycolor($_t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
 
 # md"""# Random vectors
 # C++'s section 8.1"""
