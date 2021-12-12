@@ -21,6 +21,10 @@ So I:
 
 If you're interested in the performance details, please see the git history and comments in `proto.jl`, where I used `@btime` and `julia --track-allocation=user` to optimize what were the most obvious performance bottlenecks. Please note that code is extremely messy, I'm mainly working on this during week-ends and I plan to clean it up after I optimize the code further. 
 
+# Known issues
+
+- the negatively scaled sphere has a black halo inside it. Maybe numerical inaccuracies cause the rays to stay stuck inside, incorrectly? I haven't focused on this issue yet... but if anyone knows how to fix this, please tell me!
+
 # Adapting C++ --> Julia
 
 These notes may be useful if you're new to Julia...

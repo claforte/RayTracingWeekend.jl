@@ -6,15 +6,16 @@ Pkg.activate(@__DIR__)
 
 """Next ideas:
 
+- Incorporate ideas from https://discourse.julialang.org/t/why-is-this-raytracer-slow/59176/20
+  - @inline to many functions
 - save image, e.g. PNG
 - The only remaining allocations that appear expensive are of `HitRecord`s (on the stack)
 - pre-allocate X paths (ray bundles? not sure what the terminology is) then 
   implement versions of hit, scatter, etc. that operate on an entire tensor at once.
   (i.e. efficiently parallelizable with multithreading, on SIMD or GPU)
-- figure out why my final scene has the wrong angle
+  - use FieldVector?
 - figure out the incorrect look in refraction of negatively scaled sphere
 - use parameterizable structs for Vec but keep the same efficiency
-- clean up Pluto implementation
 - share with community, ask for feedback
 - continue watching MIT course
 """
