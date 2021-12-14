@@ -23,7 +23,7 @@ So I:
 - using Vec3 for both C++'s `Vec3` and `Color`.
 
 If you're interested in the performance details and the latest optimizations, please:
-1. participate in this discussion: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c/72958/3
+1. participate in this discussion: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c
 2. see the git history and comments in `proto.jl`, where I make the latest changes, and will occasionally merge them back in the Pluto notebook. 
 
 # Known issues
