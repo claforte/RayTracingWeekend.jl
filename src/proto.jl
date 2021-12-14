@@ -10,6 +10,8 @@ t_col = @SVector[0.4, 0.5, 0.1] # test color
 
 squared_length(v::Vec3) = v ⋅ v
 
+
+
 # Before optimization:
 #   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
 # inside a function:
@@ -121,10 +123,19 @@ end
 #
 #@btime rgb(skycolor($_t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
 
-@inline random_between(min::T=0, max::T=1) where T = rand(T)*(max-min) + min # equiv to random_double()
+using RandomNumbers.Xorshifts
+const _rng = Xoroshiro128Plus()
+
+#using Random
+#const _rng = MersenneTwister() # TODO: make this per-thread
+
+
+@inline random_between(min::T=0, max::T=1) where T = rand(_rng, T)*(max-min) + min # equiv to random_double()
 # Float32: 4.519 ns (0 allocations: 0 bytes)
 # Float64: 4.329 ns (0 allocations: 0 bytes)
-#@btime random_between(50, 100) 
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#    2.695 ns (0 allocations: 0 bytes)
+@btime random_between(50.0, 100.0) 
 
 @inline random_vec3(min::T, max::T) where T = @SVector[random_between(min, max) for i ∈ 1:3]
 
@@ -138,10 +149,14 @@ end
 #    10.440 ns (0 allocations: 0 bytes)
 # Vec3{Float32}: 10.480 ns (0 allocations: 0 bytes)
 # Vec3{Float64}: 10.882 ns (0 allocations: 0 bytes)
-#@btime random_vec3(-1.0,1.0)
+# rand() using MersenneTwister _rng w/ Float64:
+#    3.787 ns (0 allocations: 0 bytes)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#    4.448 ns (0 allocations: 0 bytes)
+random_vec3(-1.0,1.0)
 
 @inline random_vec2(min::T, max::T) where T = @SVector[random_between(min, max) for i ∈ 1:2]
-#@btime random_vec2(-1.0f0,1.0f0) # 7.702 ns (0 allocations: 0 bytes)
+random_vec2(-1.0f0,1.0f0) # 3.677 ns (0 allocations: 0 bytes)
 
 @inline function random_vec3_in_sphere(::Type{T}) where T # equiv to random_in_unit_sphere()
 	while true
@@ -155,22 +170,27 @@ end
 # REMEMBER: the times are somewhat random! Use best timing of 5!
 # Float32: 34.690 ns (0 allocations: 0 bytes)
 # Float64: 34.065 ns (0 allocations: 0 bytes)
-#@btime random_vec3_in_sphere(Float64)
+# rand() using MersenneTwister _rng w/ Float64:
+#   21.333 ns (0 allocations: 0 bytes)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#   19.716 ns (0 allocations: 0 bytes)
+random_vec3_in_sphere(Float64)
 
 "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
 @inline random_vec3_on_sphere(::Type{T}) where T = normalize(random_vec3_in_sphere(T))
 
+# REMEMBER: the times are somewhat random! Use best timing of 5! 
 # Before optim:
 #   517.538 ns (12 allocations: 418 bytes)... but random
 # After reusing _rand_vec3:
 #    92.865 ns (2 allocations: 60 bytes)
 # Various speed-ups (don't use Vec3, etc.): 
 #    52.427 ns (0 allocations: 0 bytes)
-
-# REMEMBER: the times are somewhat random! Use best timing of 5! 
 # Float64: 34.549 ns (0 allocations: 0 bytes)
 # Float32: 36.274 ns (0 allocations: 0 bytes)
-#@btime random_vec3_on_sphere(Float32)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#   19.937 ns (0 allocations: 0 bytes)
+random_vec3_on_sphere(Float32)
 
 @inline function random_vec2_in_disk(::Type{T}) where T # equiv to random_in_unit_disk()
 	while true
@@ -184,7 +204,11 @@ end
 # Keep best timing of 5!
 # Float32: 14.391 ns (0 allocations: 0 bytes)
 # Float64: 14.392 ns (0 allocations: 0 bytes)
-#@btime random_vec2_in_disk(Float64)
+# rand() using MersenneTwister _rng w/ Float64:
+#   7.925 ns (0 allocations: 0 bytes)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#   7.574 ns (0 allocations: 0 bytes)
+@btime random_vec2_in_disk(Float64)
 
 """ Temporary function to shoot rays through each pixel. Later replaced by `render`
 	
@@ -572,8 +596,8 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 				# Supersampling antialiasing.
 				# claforte: I think the C++ version had a bug, the rand offset was
 				# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-				δu = (rand(T)-T(0.5)) / f32_image_width
-				δv = (rand(T)-T(0.5)) / f32_image_height
+				δu = (rand(_rng, T)-T(0.5)) / f32_image_width
+				δv = (rand(_rng, T)-T(0.5)) / f32_image_height
 			end
 			ray = get_ray(cam, u+δu, v+δv)
 			accum_color += ray_color(ray, scene)
@@ -615,6 +639,10 @@ t_default_cam = default_camera(@SVector ELEM_TYPE[0,0,0])
 # After parameterized Vec3{T}:
 # Float64: 8.344 ms (61584 allocations: 4.82 MiB)
 # Float32: 8.750 ms (123425 allocations: 3.83 MiB)
+# rand() using MersenneTwister _rng w/ Float64:
+#   6.967 ms (61600 allocations: 4.82 MiB)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#   6.536 ms (61441 allocations: 4.81 MiB)
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
@@ -623,6 +651,10 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 sampl
 #   489.745 μs (3758 allocations: 237.02 KiB)
 # With parameterized Vec3{T}:
 # Float64: 530.957 μs (3760 allocations: 414.88 KiB)
+# rand() using MersenneTwister _rng w/ Float64:
+#   473.672 μs (3748 allocations: 413.94 KiB)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#   444.399 μs (3737 allocations: 413.08 KiB)
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 
 render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
@@ -673,7 +705,7 @@ end
 	cosθ = min(-r_in.dir⋅rec.n⃗, one(T))
 	sinθ = √(one(T) - cosθ^2)
 	cannot_refract = refraction_ratio * sinθ > one(T)
-	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand(T)
+	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand(_rng, T)
 		dir = reflect(r_in.dir, rec.n⃗)
 	else
 		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
@@ -735,15 +767,15 @@ function scene_random_spheres(; elem_type::Type{T}) where T # dielectric spheres
 						  Lambertian(@SVector T[0.5,0.5,0.5])))
 
 	for a in -11:10, b in -11:10
-		choose_mat = rand(T)
-		center = @SVector [a + T(0.9)*rand(T), T(0.2), b + T(0.9)*rand(T)]
+		choose_mat = rand(_rng, T)
+		center = @SVector [a + T(0.9)*rand(_rng, T), T(0.2), b + T(0.9)*rand(_rng, T)]
 
 		# skip spheres too close?
 		if norm(center - @SVector T[4,0.2,0]) < T(0.9) continue end 
 			
 		if choose_mat < T(0.8)
 			# diffuse
-			albedo = @SVector[rand(T) for i ∈ 1:3] .* @SVector[rand(T) for i ∈ 1:3]
+			albedo = @SVector[rand(_rng, T) for i ∈ 1:3] .* @SVector[rand(_rng, T) for i ∈ 1:3]
 			push!(spheres, Sphere(center, T(0.2), Lambertian(albedo)))
 		elseif choose_mat < T(0.95)
 			# metal
@@ -793,6 +825,10 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 # After parameterized Vec3{T}:
 # Float32: 14.422 ms (26376 allocations: 896.52 KiB) # claforte: why are there 2X the allocations as previously?
 # Float64: 12.772 ms (12868 allocations: 1.08 MiB) (10% speed-up! Thanks @woclass!)
+# rand() using MersenneTwister _rng w/ Float64:
+#    14.092 ms (12769 allocations: 1.07 MiB) (SLOWER?!)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#    12.581 ms (12943 allocations: 1.08 MiB)
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -819,7 +855,9 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #    1.934 s (1796954 allocations: 82.53 MiB)
 # @woclass's Vec3{T} with T=Float64: (7.8% speed-up!)
 #    1.800 s (1711061 allocations: 131.03 MiB) 
-render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#    1.808 s (1690104 allocations: 129.43 MiB) (i.e. rand is not a bottleneck?)
+@btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -869,7 +907,9 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 #   16.035 ms (153777 allocations: 7.10 MiB)
 # After @woclass's Vec3{T} with T=Float64:
 #   16.822 ms (153591 allocations: 11.84 MiB)
-render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
+# rand() using Xoroshiro128Plus _rng w/ Float64:
+#   13.469 ms (153487 allocations: 11.83 MiB)
+@btime render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()
