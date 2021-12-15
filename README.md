@@ -12,7 +12,7 @@ Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.gi
 
 # Implementation details
 
-This Julia code is more complicated than required, because I optimized it for execution speed rather than code simplicity. I also plan to support running on GPU, to see if I can match optimized SIMD C++/CUDA/ROCM performance.
+This Julia code is more complicated than required, because I optimized it for execution speed rather than code simplicity. I also plan to support running on GPU, to see if I can match optimized SIMD C++/CUDA/ROCM performance. Finally, I refrained from implementing high-level optimizations like BVHs and smarter sampling, because I want a fair comparison with the C++ implementation.
 
 So:
 - We're using parameterized floating-point types (thanks @woclass!), which allows us to switch between Float32 and Float64 calculations, but makes the code somewhat more complex...
@@ -23,11 +23,6 @@ So:
 If you're interested in the performance details and the latest optimizations, please:
 1. participate in this discussion: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c
 2. see the git history and comments in `proto.jl`, where I make the latest changes, and will occasionally merge them back in the Pluto notebook. 
-
-# Known issues
-
-- the negatively scaled sphere has a black halo inside it. Maybe numerical inaccuracies cause the rays to stay stuck inside, incorrectly? I haven't focused on this issue yet... but if anyone knows how to fix this, please tell me!
-
 
 # Competitive Targets: GPSnoopy's ISPC C++ and Vulkan implementations
 
@@ -43,6 +38,7 @@ All perf tests were run on my Ryzen 2700 (not overclocked) on Ubuntu 20.04.
   - `-march=znver2` allows gcc to optimize specifically for this Zen2 CPU architecture.
 3. Even though I have 16 physical threads on this CPU, gcc reports it only used 14 threads. The CPU temperature hovered around 83 degrees Celsius, i.e. warm but not alarming.
 4. I examined the code, and it looks like it's using the same algorithms, i.e. no BVH. I also checked that the threaded model is similar.
+5. I have no idea whether GCC tries to vectorize the code, and by how much.
 
 Result of `time ./book1`: **22m59s**.
 
@@ -53,19 +49,27 @@ IIUC ISPC is a customized version of C specialized for SIMD and GPGPU.
 1. I modified the code to run at 1920x1080x1000 instead of 3840x2160x1000.
 2. Compiled with the `build_linux.sh` script, using `ispc-v1.16.1-linux` (i.e. latest stable compiler version)
 3. All 16 threads seemed in use, the fans were pushed to the max, and the temperature hovered around 91.3 degrees Celsius... I'm not sure it would be a good idea to let it run for long at that temperature. I'd feel safer if I had a liquid-cooled heat sink...
+4. I took a brief look at the ISPC code and I guess their high performance can in part be explained by a more optimized memory layout and of course, a language and compiler focused 100% on SIMD. 
 
-Result of `time ./book1`: **6m5s**. An impressive speed-up!
+Result of `time ./book1`: **6m5s**. A very impressive speed-up!
 
 ## Latest Julia version (see proto.jl)
 
-Uncomment `@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)`, then run using `julia --project=. --threads=16 proto.jl`.
+Method:
+1. In proto.jl, uncomment `@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)`
+2. then run using `julia --project=. --threads=16 --math-mode=fast --optimize=3 --cpu-target=znver2 src/proto.jl`.
 
-Latest result was 20m10s. Please note:
-- It doesn't use fastmath yet
-- I didn't try to optimize w/ SIMD/LoopVectorization
-- We use Float64, compared to the C++ versions that use Float32
+Notes:
+- The following arguments didn't make any noticeable difference (yet?): `--math-mode=fast --optimize=3 --cpu-target=znver2`
+- I didn't add `@fastmath` to any lines of code yet.
+- I didn't try to optimize w/ SIMD/LoopVectorization yet.
+- I use Float64, compared to the C++ versions that use Float32. (But Float32 in this Julia implementation is currently slower.)
 - I haven't tried running the Julia profiler yet, there are probably low-hanging fruits left that don't require algorithmic change.
-- The C++ version uses a 32-bit Mersenne IIUC, probably a bit faster to compute and much less random that this Julia version's use of the SOTA Xoroshiro128Plus.
+- The C++ version uses a 32-bit Mersenne IIUC, might be a bit faster to compute and certainly much less random than the SOTA Xoroshiro128Plus I use in Julia.
+
+Latest results:
+- With 16 threads: **21m38s**
+- with 14 threads: **22m21s**, i.e. now a bit faster than the equivalent GCC C++ version!
 
 Detailed timings, starting from my original, super-slow version.
 ```
@@ -88,6 +92,9 @@ Lots of other optimizations including @inline lots of stuff:
    5268.175362 seconds (4.79 G allocations: 357.005 GiB, 0.47% gc time) (1.46 hours)
 Above was all using 1 single thread. With 16 threads: (~20 minutes)
    1210.363539 seconds (4.94 G allocations: 368.435 GiB, 10.08% gc time)
+Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
+Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
+   1298.522674 seconds (5.43 G allocations: 404.519 GiB, 10.18% gc time)
 ```
 
 # Adapting C++ --> Julia
@@ -171,3 +178,7 @@ function Base.getproperty(vec::SVector{3}, sym::Symbol)
     end
 end
 ```
+
+## Negatively scaled sphere needs >4 bounces
+
+Previously I used 4 bounces max per ray path, and the negatively scaled sphere had a black halo inside it. Increasing the bounce count to 16 resolved the issue.

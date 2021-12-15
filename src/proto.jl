@@ -539,7 +539,7 @@ end
 
 	Args:
 		depth: how many more levels of recursive ray bounces can we still compute?"""
-@inline function ray_color(r::Ray{T}, world::HittableList, depth=4) where T
+@inline function ray_color(r::Ray{T}, world::HittableList, depth=16) where T
     if depth <= 0
 		return @SVector T[0,0,0]
 	end
@@ -655,6 +655,9 @@ t_default_cam = default_camera(@SVector ELEM_TYPE[0,0,0])
 #   6.536 ms (61441 allocations: 4.81 MiB)
 # Above was all using 1 single thread. With 16 threads:
 #   4.414 ms (61673 allocations: 4.82 MiB)
+# Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
+# Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
+#   4.465 ms (65680 allocations: 5.13 MiB)
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
@@ -669,6 +672,9 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 sampl
 #   444.399 μs (3737 allocations: 413.08 KiB)
 # Above was all using 1 single thread. With 16 threads:
 #   300.438 μs (3829 allocations: 420.86 KiB)
+# Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
+# Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
+#   314.094 μs (4009 allocations: 434.97 KiB)
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 
 render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
@@ -845,6 +851,9 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 #    12.581 ms (12943 allocations: 1.08 MiB)
 # Above was all using 1 single thread. With 16 threads:
 #     1.789 ms (12926 allocations: 1.08 MiB) (WOW!)
+# Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
+# Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
+#     2.168 ms (13791 allocations: 1.15 MiB)
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -875,6 +884,9 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #    1.808 s (1690104 allocations: 129.43 MiB) (i.e. rand is not a bottleneck?)
 # Above was all using 1 single thread. With 16 threads:
 #  265.331 ms (1645402 allocations: 126.02 MiB) (WOW!)
+# Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
+# Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
+#  308.217 ms (1830162 allocations: 140.12 MiB)
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
@@ -896,6 +908,10 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32)
 #    5268.175362 seconds (4.79 G allocations: 357.005 GiB, 0.47% gc time) (1.46 hours)
 # Above was all using 1 single thread. With 16 threads: (~20 minutes)
 #    1210.363539 seconds (4.94 G allocations: 368.435 GiB, 10.08% gc time)
+# Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
+# Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
+#    1298.522674 seconds (5.43 G allocations: 404.519 GiB, 10.18% gc time)
+print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
 #@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
 
 
@@ -932,6 +948,9 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 #   13.469 ms (153487 allocations: 11.83 MiB)
 # Above was all using 1 single thread. With 16 threads:
 #    6.537 ms (153599 allocations: 11.84 MiB)
+# Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
+# Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
+#    6.766 ms (161000 allocations: 12.40 MiB)
 render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
 
 # using Profile
