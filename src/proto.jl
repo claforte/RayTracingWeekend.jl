@@ -5,14 +5,15 @@ using Pkg
 Pkg.activate(@__DIR__)
 
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
+using LoopVectorization: @turbo
+using SIMD: @simd
+
 Threads.nthreads()
 
 const Vec3{T<:AbstractFloat} = SVector{3, T}
 t_col = @SVector[0.4, 0.5, 0.1] # test color
 
 squared_length(v::Vec3) = v ⋅ v
-
-
 
 # Before optimization:
 #   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
@@ -54,25 +55,36 @@ ex2[1,1] = RGB(1,0,0)
 ex2
 
 # The "Hello World" of graphics
-function gradient(nx::Int, ny::Int)
+@fastmath function gradient(nx::Int, ny::Int)
 	img = zeros(RGB, ny, nx)
-	for j in 1:nx, i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
-		x = j; y = (ny-i);
-		r = x/nx
-		g = y/ny
-		b = 0.2
-		img[i,j] = RGB(r,g,b)
+	@inbounds @simd for j in 1:nx
+		for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
+			x = j; y = (ny-i);
+			r = x/nx
+			g = y/ny
+			b = 0.2
+			img[i,j] = RGB(r,g,b)
+		end
 	end
 	img
 end
 
+
+# no explicit SIMD:
+#  115.968 μs (20002 allocations: 781.33 KiB)
+# w/ @turbo:
+#  106.090 μs (20009 allocations: 781.61 KiB)
+# w/ just @inbounds:
+#  102.674 μs (20002 allocations: 781.33 KiB)
+# w/ @fastmath, @inbounds, @simd:
+#  100.209 μs (20002 allocations: 781.33 KiB)
 gradient(200,100)
 
 @inline rgb(v::Vec3) = RGB(v...)
-#@btime rgb($t_col) # 1.172 ns (0 allocations: 0 bytes)
+#rgb($t_col) # 1.172 ns (0 allocations: 0 bytes)
 
 @inline rgb_gamma2(v::Vec3) = RGB(sqrt.(v)...)
-#@btime rgb_gamma2($t_col) # 3.927 ns (0 allocations: 0 bytes)
+rgb_gamma2($t_col) # 3.927 ns (0 allocations: 0 bytes)
 
 struct Ray{T}
 	origin::Vec3{T} # Point 
@@ -137,9 +149,9 @@ const _rng = Xoroshiro128Plus()
 # Float64: 4.329 ns (0 allocations: 0 bytes)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #    2.695 ns (0 allocations: 0 bytes)
-random_between(50.0, 100.0) 
+#@btime random_between(50.0, 100.0) 
 
-@inline random_vec3(min::T, max::T) where T = @SVector[random_between(min, max) for i ∈ 1:3]
+@inline random_vec3(min::T, max::T) where T = @inbounds @SVector[random_between(min, max) for i ∈ 1:3]
 
 # Before optimization:
 #   352.322 ns (6 allocations: 224 bytes)
@@ -155,10 +167,12 @@ random_between(50.0, 100.0)
 #    3.787 ns (0 allocations: 0 bytes)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #    4.448 ns (0 allocations: 0 bytes)
-random_vec3(-1.0,1.0)
+# using @inbounds:
+#    4.298 ns (0 allocations: 0 bytes)
+#@btime random_vec3(-1.0,1.0)
 
-@inline random_vec2(min::T, max::T) where T = @SVector[random_between(min, max) for i ∈ 1:2]
-random_vec2(-1.0f0,1.0f0) # 3.677 ns (0 allocations: 0 bytes)
+@inline random_vec2(min::T, max::T) where T = @inbounds @SVector[random_between(min, max) for i ∈ 1:2]
+#@btime random_vec2(-1.0f0,1.0f0) # 3.677 ns (0 allocations: 0 bytes)
 
 @inline function random_vec3_in_sphere(::Type{T}) where T # equiv to random_in_unit_sphere()
 	while true
@@ -225,7 +239,7 @@ function main(nx::Int, ny::Int, scene, ::Type{T}) where T
 	
 	img = zeros(RGB{T}, ny, nx)
 	Threads.@threads for j in 1:nx
-		for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
+		@inbounds for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
 			u = T(j/nx)
 			v = T((ny-i)/ny) # Y-up!
 			ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
@@ -251,11 +265,14 @@ end
 # Float64: 161.516 μs (2 allocations: 468.83 KiB)
 # Above was all using 1 single thread. With 16 threads:
 #   52.218 μs (83 allocations: 241.75 KiB)
+# With @inbounds:
+#   49.243 μs (83 allocations: 241.75 KiB)
 main(200, 100, skycolor, Float32) 
 
 #md"# Chapter 5: Add a sphere"
 
-@inline function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
+# @fastmath speeds up a lot!
+@inline @fastmath function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
 	oc = r.origin - center
 	a = r.dir ⋅ r.dir
 	b = 2oc ⋅ r.dir
@@ -274,6 +291,8 @@ end
 
 # Float32: 149.613 μs (2 allocations: 234.45 KiB)
 # Float64: 173.818 μs (2 allocations: 468.83 KiB)
+# w/ @fastmath in hit_sphere1:
+#    63.751 μs (83 allocations: 476.14 KiB)
 main(200, 100, sphere_scene1, Float64) 
 
 #md"# Chapter 6: Surface normals and multiple objects"
@@ -310,7 +329,7 @@ end
 # Float64: 351.164 μs (2 allocations: 468.83 KiB)
 # Above was all using 1 single thread. With 16 threads:
 #   64.612 μs (83 allocations: 241.75 KiB)
-main(200,100,sphere_scene2, Float32)
+@btime main(200,100,sphere_scene2, Float32)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -347,7 +366,7 @@ end
 # """
 
 """Equivalent to `hit_record.set_face_normal()`"""
-@inline function ray_to_HitRecord(t::T, p, outward_n⃗, r_dir::Vec3{T}, mat::Material{T}) where T
+@inline @fastmath function ray_to_HitRecord(t::T, p, outward_n⃗, r_dir::Vec3{T}, mat::Material{T}) where T
 	front_face = r_dir ⋅ outward_n⃗ < 0
 	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
 	HitRecord(t,p,n⃗,front_face,mat)
@@ -371,7 +390,7 @@ end
 
 	See [diagram](https://raytracing.github.io/books/RayTracingInOneWeekend.html#metal/mirroredlightreflection)"""
 #reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = normalize(v - (2v⋅n⃗)*n⃗) # claforte: normalize not needed?
-@inline reflect(v::Vec3{T}, n⃗::Vec3{T}) where T = v - (2v⋅n⃗)*n⃗
+@inline @fastmath reflect(v::Vec3{T}, n⃗::Vec3{T}) where T = v - (2v⋅n⃗)*n⃗
 
 @assert reflect(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0]) == @SVector[0.6,0.8,0.0] # diagram's example
 
@@ -381,7 +400,7 @@ end
 		rec: the HitRecord of the surface from which to scatter the ray.
 
 	Return missing if it's fully absorbed. """
-@inline function scatter(mat::Lambertian{T}, r::Ray{T}, rec::HitRecord{T})::Scatter{T} where T
+@inline @fastmath function scatter(mat::Lambertian{T}, r::Ray{T}, rec::HitRecord{T})::Scatter{T} where T
 	scatter_dir = rec.n⃗ + random_vec3_on_sphere(T)
 	if near_zero(scatter_dir) # Catch degenerate scatter direction
 		scatter_dir = rec.n⃗ 
@@ -395,7 +414,7 @@ end
 
 const _no_hit = HitRecord{Float64}() # claforte: HACK! favoring Float64...
 
-@inline function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T) where T
+@inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T) where T
     oc = r.origin - s.center
     a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
     half_b = oc ⋅ r.dir
@@ -425,7 +444,7 @@ const HittableList = Vector{Hittable}
 @inline function hit(hittables::HittableList, r::Ray{T}, tmin::T, tmax::T) where T
     closest = tmax # closest t so far
     rec = _no_hit
-    for h in hittables
+    @simd for h in hittables
         temprec = hit(h, r, tmin, closest)
         if temprec !== _no_hit
             rec = temprec
@@ -445,7 +464,7 @@ mutable struct Metal{T} <: Material{T}
 	@inline Metal(a::Vec3{T}, f::T=0.0) where T = new{T}(a,f)
 end
 
-@inline function scatter(mat::Metal{T}, r_in::Ray{T}, rec::HitRecord)::Scatter{T} where T
+@inline @fastmath function scatter(mat::Metal{T}, r_in::Ray{T}, rec::HitRecord)::Scatter{T} where T
 	reflected = normalize(reflect(r_in.dir, rec.n⃗) + mat.fuzz*random_vec3_on_sphere(T))
 	Scatter(Ray(rec.p, reflected), mat.albedo)
 end
@@ -526,7 +545,7 @@ default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist; 
 
 #md"# Render
 
-@inline function get_ray(c::Camera{T}, s::T, t::T) where T
+@inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
 	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
 	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
@@ -539,7 +558,7 @@ end
 
 	Args:
 		depth: how many more levels of recursive ray bounces can we still compute?"""
-@inline function ray_color(r::Ray{T}, world::HittableList, depth=16) where T
+@inline @fastmath function ray_color(r::Ray{T}, world::HittableList, depth=16) where T
     if depth <= 0
 		return @SVector T[0,0,0]
 	end
@@ -593,7 +612,7 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	# surprisingly, in the first test below, the opposite pattern arises...
 	#for j in 1:image_width, i in 1:image_height # iterate over each column (SLOWER?!)
 	Threads.@threads for i in 1:image_height
-		for j in 1:image_width # iterate over each row (FASTER?!)
+		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
 			accum_color = @SVector T[0,0,0]
 			u = convert(T, j/image_width)
 			v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
@@ -692,7 +711,7 @@ render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 # 	Args:
 # 		refraction_ratio: incident refraction index divided by refraction index of 
 # 			hit surface. i.e. η/η′ in the figure above"""
-@inline function refract(dir::Vec3{T}, n⃗::Vec3{T}, refraction_ratio::T) where T
+@inline @fastmath function refract(dir::Vec3{T}, n⃗::Vec3{T}, refraction_ratio::T) where T
 	cosθ = min(-dir ⋅ n⃗, one(T))
 	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
 	r_out_parallel = -√(abs(one(T)-squared_length(r_out_perp))) * n⃗
@@ -711,7 +730,7 @@ mutable struct Dielectric{T} <: Material{T}
 	ir::T # index of refraction, i.e. η.
 end
 
-@inline function reflectance(cosθ, refraction_ratio)
+@inline @fastmath function reflectance(cosθ, refraction_ratio)
 	# Use Schlick's approximation for reflectance.
 	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
 	r0 = (1-refraction_ratio) / (1+refraction_ratio)
@@ -719,7 +738,7 @@ end
 	r0 + (1-r0)*((1-cosθ)^5)
 end
 
-@inline function scatter(mat::Dielectric{T}, r_in::Ray{T}, rec::HitRecord{T}) where T
+@inline @fastmath function scatter(mat::Dielectric{T}, r_in::Ray{T}, rec::HitRecord{T}) where T
 	attenuation = @SVector T[1,1,1]
 	refraction_ratio = rec.front_face ? (one(T)/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
 	cosθ = min(-r_in.dir⋅rec.n⃗, one(T))
@@ -854,6 +873,9 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #     2.168 ms (13791 allocations: 1.15 MiB)
+# Using  bunch of @inbounds, @simd in low-level functions
+#     2.076 ms (13861 allocations: 1.15 MiB)
+
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -887,6 +909,8 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #  308.217 ms (1830162 allocations: 140.12 MiB)
+# Using @inbounds, @simd in low-level functions:
+#  302.952 ms (1892513 allocations: 144.88 MiB)
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
@@ -911,8 +935,10 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32)
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #    1298.522674 seconds (5.43 G allocations: 404.519 GiB, 10.18% gc time)
+# Using @inbounds, @simd in low-level functions:
+#    1314.510565 seconds (5.53 G allocations: 411.753 GiB, 10.21% gc time) # NOTE: difference due to randomness?
 print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
-#@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
+@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
 
 
 t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
@@ -951,7 +977,9 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #    6.766 ms (161000 allocations: 12.40 MiB)
-render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
+# @inbounds and @simd in low-level functions
+#    6.519 ms (160609 allocations: 12.37 MiB)
+@btime render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()
