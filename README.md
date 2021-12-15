@@ -64,15 +64,11 @@ Unlike the C++ implementation:
 
 ## Short-term
 
+- Run the C++ benchmark on my PC, confirm exactly what algorithmic changes they have which I don’t, for a fair and precise comparison
 - investigate whether Float32 perf degradation can be fixed (doubled the allocations...)
 - break the code into multiple files...
 - replace `const _no_hit = HitRecord{Float64}()` by a distance check (would be type-independent)
   - then re-run Float32 and Float64 perf tests
-- Follow @DNF's recommendation: Read Bogumil's blog post on rand performance:
-  https://bkamins.github.io/julialang/2020/11/20/rand.html
-  Try using the Xoshiro RNG.
-- Run the C++ benchmark on my PC, confirm exactly what algorithmic changes they have which I don’t,
-  for a fair and precise comparison
 - Read on the SIMD libraries, try to figure out the best approach. (I’ll welcome any suggestion you have!)
 - update pluto_RayTracingWeekend.jl, then share on Twitter, etc.
 - save image, e.g. PNG

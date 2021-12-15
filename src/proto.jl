@@ -5,6 +5,8 @@ using Pkg
 Pkg.activate(@__DIR__)
 
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
+Threads.nthreads()
+
 const Vec3{T<:AbstractFloat} = SVector{3, T}
 t_col = @SVector[0.4, 0.5, 0.1] # test color
 
@@ -135,7 +137,7 @@ const _rng = Xoroshiro128Plus()
 # Float64: 4.329 ns (0 allocations: 0 bytes)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #    2.695 ns (0 allocations: 0 bytes)
-@btime random_between(50.0, 100.0) 
+random_between(50.0, 100.0) 
 
 @inline random_vec3(min::T, max::T) where T = @SVector[random_between(min, max) for i ∈ 1:3]
 
@@ -208,7 +210,7 @@ end
 #   7.925 ns (0 allocations: 0 bytes)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #   7.574 ns (0 allocations: 0 bytes)
-@btime random_vec2_in_disk(Float64)
+random_vec2_in_disk(Float64)
 
 """ Temporary function to shoot rays through each pixel. Later replaced by `render`
 	
@@ -222,14 +224,16 @@ function main(nx::Int, ny::Int, scene, ::Type{T}) where T
 	origin = @SVector[T(0),T(0),T(0)]
 	
 	img = zeros(RGB{T}, ny, nx)
-	for j in 1:nx, i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
-		u = T(j/nx)
-		v = T((ny-i)/ny) # Y-up!
-		ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
-		#r = x/nx
-		#g = y/ny
-		#b = 0.2
-		img[i,j] = rgb(scene(ray))
+	Threads.@threads for j in 1:nx
+		for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
+			u = T(j/nx)
+			v = T((ny-i)/ny) # Y-up!
+			ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
+			#r = x/nx
+			#g = y/ny
+			#b = 0.2
+			img[i,j] = rgb(scene(ray))
+		end
 	end
 	img
 end
@@ -245,6 +249,8 @@ end
 # With Vec3{T}...
 # Float32: 174.560 μs (2 allocations: 234.45 KiB)
 # Float64: 161.516 μs (2 allocations: 468.83 KiB)
+# Above was all using 1 single thread. With 16 threads:
+#   52.218 μs (83 allocations: 241.75 KiB)
 main(200, 100, skycolor, Float32) 
 
 #md"# Chapter 5: Add a sphere"
@@ -302,6 +308,8 @@ end
 # NOW:
 # Float32: 290.470 μs (2 allocations: 234.45 KiB)
 # Float64: 351.164 μs (2 allocations: 468.83 KiB)
+# Above was all using 1 single thread. With 16 threads:
+#   64.612 μs (83 allocations: 241.75 KiB)
 main(200,100,sphere_scene2, Float32)
 
 "An object that can be hit by Ray"
@@ -584,25 +592,27 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	# Usually iterating over 1 column at a time is faster, but
 	# surprisingly, in the first test below, the opposite pattern arises...
 	#for j in 1:image_width, i in 1:image_height # iterate over each column (SLOWER?!)
-	for i in 1:image_height, j in 1:image_width # iterate over each row (FASTER?!)
-		accum_color = @SVector T[0,0,0]
-		u = convert(T, j/image_width)
-		v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
-		
-		for s in 1:n_samples
-			if s == 1 # 1st sample is always centered
-				δu = δv = T(0)
-			else
-				# Supersampling antialiasing.
-				# claforte: I think the C++ version had a bug, the rand offset was
-				# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-				δu = (rand(_rng, T)-T(0.5)) / f32_image_width
-				δv = (rand(_rng, T)-T(0.5)) / f32_image_height
+	Threads.@threads for i in 1:image_height
+		for j in 1:image_width # iterate over each row (FASTER?!)
+			accum_color = @SVector T[0,0,0]
+			u = convert(T, j/image_width)
+			v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
+			
+			for s in 1:n_samples
+				if s == 1 # 1st sample is always centered
+					δu = δv = T(0)
+				else
+					# Supersampling antialiasing.
+					# claforte: I think the C++ version had a bug, the rand offset was
+					# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
+					δu = (rand(_rng, T)-T(0.5)) / f32_image_width
+					δv = (rand(_rng, T)-T(0.5)) / f32_image_height
+				end
+				ray = get_ray(cam, u+δu, v+δv)
+				accum_color += ray_color(ray, scene)
 			end
-			ray = get_ray(cam, u+δu, v+δv)
-			accum_color += ray_color(ray, scene)
+			img[i,j] = rgb_gamma2(accum_color / n_samples)
 		end
-		img[i,j] = rgb_gamma2(accum_color / n_samples)
 	end
 	img
 end
@@ -643,6 +653,8 @@ t_default_cam = default_camera(@SVector ELEM_TYPE[0,0,0])
 #   6.967 ms (61600 allocations: 4.82 MiB)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #   6.536 ms (61441 allocations: 4.81 MiB)
+# Above was all using 1 single thread. With 16 threads:
+#   4.414 ms (61673 allocations: 4.82 MiB)
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
@@ -655,6 +667,8 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 sampl
 #   473.672 μs (3748 allocations: 413.94 KiB)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #   444.399 μs (3737 allocations: 413.08 KiB)
+# Above was all using 1 single thread. With 16 threads:
+#   300.438 μs (3829 allocations: 420.86 KiB)
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 
 render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
@@ -829,6 +843,8 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 #    14.092 ms (12769 allocations: 1.07 MiB) (SLOWER?!)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #    12.581 ms (12943 allocations: 1.08 MiB)
+# Above was all using 1 single thread. With 16 threads:
+#     1.789 ms (12926 allocations: 1.08 MiB) (WOW!)
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -857,7 +873,9 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #    1.800 s (1711061 allocations: 131.03 MiB) 
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #    1.808 s (1690104 allocations: 129.43 MiB) (i.e. rand is not a bottleneck?)
-@btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
+# Above was all using 1 single thread. With 16 threads:
+#  265.331 ms (1645402 allocations: 126.02 MiB) (WOW!)
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -876,7 +894,10 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 # @woclass's "Use alias instead of new struct", i.e. `const HittableList = Vector{Hittable}`
 # @woclass's Vec3{T} with T=Float64: (7.8% speed-up!): 
 #    5268.175362 seconds (4.79 G allocations: 357.005 GiB, 0.47% gc time) (1.46 hours)
+# Above was all using 1 single thread. With 16 threads: (~20 minutes)
+#    1210.363539 seconds (4.94 G allocations: 368.435 GiB, 10.08% gc time)
 #@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
+
 
 t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
 						elem_type=ELEM_TYPE)
@@ -909,7 +930,9 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 #   16.822 ms (153591 allocations: 11.84 MiB)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
 #   13.469 ms (153487 allocations: 11.83 MiB)
-@btime render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
+# Above was all using 1 single thread. With 16 threads:
+#    6.537 ms (153599 allocations: 11.84 MiB)
+render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()
