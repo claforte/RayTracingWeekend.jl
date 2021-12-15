@@ -12,15 +12,13 @@ Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.gi
 
 # Implementation details
 
-This Julia code is more complicated than required, for a few reasons:
-- I'm far from a Julia expert yet. Hopefully real experts will suggest improvements.
-- I optimized for execution speed rather than code simplicity. I also plan to support running on multi-thread and GPU, to see if I can match optimized SIMD C++/CUDA/ROCM performance.
+This Julia code is more complicated than required, because I optimized it for execution speed rather than code simplicity. I also plan to support running on GPU, to see if I can match optimized SIMD C++/CUDA/ROCM performance.
 
-So I:
-- tried to minimize memory allocations (allocation on the stack instead of the heap, e.g. using StaticArrays)
-- plan to pre-allocate groups of rays into tensors to support higher parallelism.
+So:
 - We're using parameterized floating-point types (thanks @woclass!), which allows us to switch between Float32 and Float64 calculations, but makes the code somewhat more complex...
-- using Vec3 for both C++'s `Vec3` and `Color`.
+- We're using Vec3 for both C++'s `Vec3` and `Color`.
+- I tried to minimize memory allocations (allocation on the stack instead of the heap, e.g. using StaticArrays)
+- I plan to pre-allocate groups of rays into tensors to support higher parallelism (but only after I exhausted less intrusive low-level optimizations, to be fair against the SIMD-optimized C++ implementation that doesn't go to that extent)
 
 If you're interested in the performance details and the latest optimizations, please:
 1. participate in this discussion: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c
@@ -29,6 +27,68 @@ If you're interested in the performance details and the latest optimizations, pl
 # Known issues
 
 - the negatively scaled sphere has a black halo inside it. Maybe numerical inaccuracies cause the rays to stay stuck inside, incorrectly? I haven't focused on this issue yet... but if anyone knows how to fix this, please tell me!
+
+
+# Competitive Targets: GPSnoopy's ISPC C++ and Vulkan implementations
+
+https://github.com/GPSnoopy/RayTracingInOneWeekend
+
+All perf tests were run on my Ryzen 2700 (not overclocked) on Ubuntu 20.04.
+
+## GPSnoopy's C++ implementation using GCC
+
+1. I modified the code to run at 1920x1080x1000 instead of 3840x2160x1000.
+2. Compiled with `g++ -o book1 -std=c++1z -Wall -Wextra -O3 -ffast-math -march=znver2 main.cpp -lpthread`, using `gcc version 9.3.0 (Ubuntu 9.3.0-17ubuntu1~20.04)`.
+  - Notice `-ffast-math` - I haven't tried that yet in my Julia version.
+  - `-march=znver2` allows gcc to optimize specifically for this Zen2 CPU architecture.
+3. Even though I have 16 physical threads on this CPU, gcc reports it only used 14 threads. The CPU temperature hovered around 83 degrees Celsius, i.e. warm but not alarming.
+4. I examined the code, and it looks like it's using the same algorithms, i.e. no BVH. I also checked that the threaded model is similar.
+
+Result of `time ./book1`: **22m59s**.
+
+## GPSnoopy's ISPC implementation
+
+IIUC ISPC is a customized version of C specialized for SIMD and GPGPU.
+
+1. I modified the code to run at 1920x1080x1000 instead of 3840x2160x1000.
+2. Compiled with the `build_linux.sh` script, using `ispc-v1.16.1-linux` (i.e. latest stable compiler version)
+3. All 16 threads seemed in use, the fans were pushed to the max, and the temperature hovered around 91.3 degrees Celsius... I'm not sure it would be a good idea to let it run for long at that temperature. I'd feel safer if I had a liquid-cooled heat sink...
+
+Result of `time ./book1`: **6m5s**. An impressive speed-up!
+
+## Latest Julia version (see proto.jl)
+
+Uncomment `@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)`, then run using `julia --project=. --threads=16 proto.jl`.
+
+Latest result was 20m10s. Please note:
+- It doesn't use fastmath yet
+- I didn't try to optimize w/ SIMD/LoopVectorization
+- We use Float64, compared to the C++ versions that use Float32
+- I haven't tried running the Julia profiler yet, there are probably low-hanging fruits left that don't require algorithmic change.
+- The C++ version uses a 32-bit Mersenne IIUC, probably a bit faster to compute and much less random that this Julia version's use of the SOTA Xoroshiro128Plus.
+
+Detailed timings, starting from my original, super-slow version.
+```
+After some optimization, took ~5.6 hours:
+  20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
+... however the image looked weird... too blurry
+After removing all remaining Color, Vec3, replacing them with @SVector[]... took ~3.7 hours:
+  13326.770907 seconds (29.82 G allocations: 714.941 GiB, 0.36% gc time)
+Using convert(Float32, ...) instead of MyFloat(...):
+Don't specify return value of Option{HitRecord} in hit()
+Don't initialize unnecessary elements in HitRecord(): 
+Took ~4.1 hours:
+  14723.339976 seconds (5.45 G allocations: 243.044 GiB, 0.11% gc time) # WORSE, probably because we're writing a lot more to stack...?
+Replace MyFloat by Float32:
+Lots of other optimizations including @inline lots of stuff: 
+   6018.101653 seconds (5.39 G allocations: 241.139 GiB, 0.21% gc time) (1.67 hour)
+@woclass's rand(Float32) to avoid Float64s: (expected to provide 2.2% speed up)
+@woclass's "Use alias instead of new struct", i.e. `const HittableList = Vector{Hittable}`
+@woclass's Vec3{T} with T=Float64: (7.8% speed-up!): 
+   5268.175362 seconds (4.79 G allocations: 357.005 GiB, 0.47% gc time) (1.46 hours)
+Above was all using 1 single thread. With 16 threads: (~20 minutes)
+   1210.363539 seconds (4.94 G allocations: 368.435 GiB, 10.08% gc time)
+```
 
 # Adapting C++ --> Julia
 
@@ -64,7 +124,8 @@ Unlike the C++ implementation:
 
 ## Short-term
 
-- Run the C++ benchmark on my PC, confirm exactly what algorithmic changes they have which I don’t, for a fair and precise comparison
+- try fastmath
+- try 14 threads for a fair comparison vs gcc
 - investigate whether Float32 perf degradation can be fixed (doubled the allocations...)
 - break the code into multiple files...
 - replace `const _no_hit = HitRecord{Float64}()` by a distance check (would be type-independent)
@@ -76,7 +137,7 @@ Unlike the C++ implementation:
 - Probably pre-allocate the ray bundles/paths (I don’t know how they are called in the litterature) to later 
   simplify the GPU (and probably the SIMD) implementation.
 - implement versions of hit, scatter, etc. that operate on an entire tensor at once.
-  (i.e. efficiently parallelizable with multithreading, on SIMD or GPU)
+  (i.e. efficiently parallelizable with SIMD or GPU)
   - use FieldVector?
 - figure out the incorrect look in refraction of negatively scaled sphere
 - continue watching MIT course
@@ -84,7 +145,6 @@ Unlike the C++ implementation:
 ## Long-term
 
 - SIMD, AVX, etc. Test on at least 2 CPUs.
-- Multi-threading
 - GPU through CUDA, ROCM
 - Implement the rest of Peter Shirley's books, especially BVHs
 - Vulkan RT interface, e.g. port of https://github.com/KhronosGroup/Vulkan-Samples/tree/master/samples/extensions/raytracing_basic
@@ -93,7 +153,7 @@ Unlike the C++ implementation:
 
 ## using Base.getproperty() for `vec.x` instead of `vec[1]`.
 
-This was meant to be a convenient function to get `some_vec.x` or `some_color.r`, but this causes ~41 allocations per call, so this was a huge bottleneck.
+This was meant to be a convenient function to get `some_vec.x` or `some_color.r`, but this caused ~41 allocations per call, so this was a huge bottleneck.
 TODO: replace by a lens? i.e. see https://youtu.be/vkAOYeTpLg0?t=426
 
 ```
