@@ -11,7 +11,7 @@ using SIMD: @simd
 Threads.nthreads()
 
 const Vec3{T<:AbstractFloat} = SVector{3, T}
-t_col = @SVector[0.4, 0.5, 0.1] # test color
+t_col = SA[0.4, 0.5, 0.1] # test color. See StaticArrays.jl
 
 squared_length(v::Vec3) = v ⋅ v
 
@@ -92,8 +92,8 @@ struct Ray{T}
 end
 
 # interpolates between blue and white
-_origin = @SVector[0.0,0.0,0.0]
-_v3_minusY = @SVector[0.0,-1.0,0.0]
+_origin = SA[0.0,0.0,0.0]
+_v3_minusY = SA[0.0,-1.0,0.0]
 _t_ray1 = Ray(_origin, _v3_minusY)
 # Float32: 6.161 ns (0 allocations: 0 bytes)
 # Float64: 6.900 ns (0 allocations: 0 bytes)
@@ -106,8 +106,8 @@ _t_ray1 = Ray(_origin, _v3_minusY)
 #md"# Chapter 4: Rays, simple camera, and background"
 
 @inline function skycolor(ray::Ray{T}) where T
-	white = @SVector[1.0, 1.0, 1.0]
-	skyblue = @SVector[0.5, 0.7, 1.0]
+	white = SA[1.0, 1.0, 1.0]
+	skyblue = SA[0.5, 0.7, 1.0]
 	t = T(0.5)*(ray.dir[2] + one(T))
     (one(T)-t)*white + t*skyblue
 end
@@ -232,10 +232,10 @@ random_vec2_in_disk(Float64)
 		scene: a function that takes a ray, returns the color of any object it hit
 """
 function main(nx::Int, ny::Int, scene, ::Type{T}) where T
-	lower_left_corner = @SVector[-2,-1,-1]
-	horizontal = @SVector[4,0,0]
-	vertical = @SVector[T(0),T(2),T(0)]
-	origin = @SVector[T(0),T(0),T(0)]
+	lower_left_corner = SA[-2,-1,-1]
+	horizontal = SA[4,0,0]
+	vertical = SA[T(0),T(2),T(0)]
+	origin = SA[T(0),T(0),T(0)]
 	
 	img = zeros(RGB{T}, ny, nx)
 	Threads.@threads for j in 1:nx
@@ -282,8 +282,8 @@ main(200, 100, skycolor, Float32)
 end
 
 @inline function sphere_scene1(r::Ray{T}) where T
-	if hit_sphere1(@SVector[T(0), T(0), T(0)], T(0.5), r) # sphere of radius 0.5 centered at z=-1
-		return @SVector[T(1),T(0),T(0)] # red
+	if hit_sphere1(SA[T(0), T(0), T(0)], T(0.5), r) # sphere of radius 0.5 centered at z=-1
+		return SA[T(1),T(0),T(0)] # red
 	else
 		skycolor(r)
 	end
@@ -311,11 +311,11 @@ main(200, 100, sphere_scene1, Float64)
 end
 
 @inline function sphere_scene2(r::Ray{T}) where T
-	sphere_center = @SVector[T(0),T(0),T(0)]
+	sphere_center = SA[T(0),T(0),T(0)]
 	t = hit_sphere2(sphere_center, T(0.5), r) # sphere of radius 0.5 centered at z=-1
 	if t > T(0)
 		n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
-		return T(0.5)*n⃗ + @SVector[T(0.5),T(0.5),T(0.5)] # remap normal to rgb
+		return T(0.5)*n⃗ + SA[T(0.5),T(0.5),T(0.5)] # remap normal to rgb
 	else
 		skycolor(r)
 	end
@@ -392,7 +392,7 @@ end
 #reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = normalize(v - (2v⋅n⃗)*n⃗) # claforte: normalize not needed?
 @inline @fastmath reflect(v::Vec3{T}, n⃗::Vec3{T}) where T = v - (2v⋅n⃗)*n⃗
 
-@assert reflect(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0]) == @SVector[0.6,0.8,0.0] # diagram's example
+@assert reflect(SA[0.6,-0.8,0.0], SA[0.0,1.0,0.0]) == SA[0.6,0.8,0.0] # diagram's example
 
 """Create a scattered ray emitted by `mat` from incident Ray `r`. 
 
@@ -454,7 +454,7 @@ const HittableList = Vector{Hittable}
     rec
 end
 
-@inline color_vec3_in_rgb(v::Vec3{T}) where T = 0.5normalize(v) + @SVector T[0.5,0.5,0.5]
+@inline color_vec3_in_rgb(v::Vec3{T}) where T = 0.5normalize(v) + SA{T}[0.5,0.5,0.5]
 
 #md"# Metal material"
 
@@ -463,7 +463,6 @@ struct Metal{T} <: Material{T}
 	fuzz::T # how big the sphere used to generate fuzzy reflection rays. 0=none
 	@inline Metal(a::Vec3{T}, f::T=0.0) where T = new{T}(a,f)
 end
-
 @inline @fastmath function scatter(mat::Metal{T}, r_in::Ray{T}, rec::HitRecord)::Scatter{T} where T
 	reflected = normalize(reflect(r_in.dir, rec.n⃗) + mat.fuzz*random_vec3_on_sphere(T))
 	Scatter(Ray(rec.p, reflected), mat.albedo)
@@ -477,10 +476,10 @@ function scene_2_spheres(; elem_type::Type{T}) where T
 	spheres = Sphere[]
 	
 	# small center sphere
-	push!(spheres, Sphere((@SVector T[0,0,-1]), T(0.5), Lambertian(@SVector T[0.7,0.3,0.3])))
+	push!(spheres, Sphere((SA{T}[0,0,-1]), T(0.5), Lambertian(SA{T}[0.7,0.3,0.3])))
 	
 	# ground sphere
-	push!(spheres, Sphere((@SVector T[0,-100.5,-1]), T(100), Lambertian(@SVector T[0.8,0.8,0.0])))
+	push!(spheres, Sphere((SA{T}[0,-100.5,-1]), T(100), Lambertian(SA{T}[0.8,0.8,0.0])))
 	HittableList(spheres)
 end
 
@@ -491,8 +490,8 @@ function scene_4_spheres(; elem_type::Type{T}) where T
 	scene = scene_2_spheres(; elem_type=elem_type)
 
 	# left and right Metal spheres
-	push!(scene, Sphere((@SVector T[-1,0,-1]), T(0.5), Metal((@SVector T[0.8,0.8,0.8]), T(0.3)))) 
-	push!(scene, Sphere((@SVector T[ 1,0,-1]), T(0.5), Metal((@SVector T[0.8,0.6,0.2]), T(0.8))))
+	push!(scene, Sphere((SA{T}[-1,0,-1]), T(0.5), Metal((SA{T}[0.8,0.8,0.8]), T(0.3)))) 
+	push!(scene, Sphere((SA{T}[ 1,0,-1]), T(0.5), Metal((SA{T}[0.8,0.6,0.2]), T(0.8))))
 	return scene
 end
 
@@ -516,9 +515,9 @@ end
 		aspect_ratio: horizontal/vertical ratio of pixels
       aperture: if 0 - no depth-of-field
 """
-function default_camera(lookfrom::Vec3{T}=(@SVector T[0,0,0]), 
-						lookat::Vec3{T}=(@SVector T[0,0,-1]), 
-						vup::Vec3{T}=(@SVector T[0,1,0]), 
+function default_camera(lookfrom::Vec3{T}=(SA{T}[0,0,0]), 
+						lookat::Vec3{T}=(SA{T}[0,0,-1]), 
+						vup::Vec3{T}=(SA{T}[0,1,0]), 
 						vfov::T=T(90), aspect_ratio::T=T(16/9),
 						aperture::T=T(0), focus_dist::T=T(1)) where T
 	viewport_height = T(2) * tand(vfov/T(2))
@@ -536,7 +535,7 @@ function default_camera(lookfrom::Vec3{T}=(@SVector T[0,0,0]),
 	Camera{T}(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius)
 end
 
-default_camera(@SVector [0f0,0f0,0f0]) # Float32 camera
+default_camera(SA[0f0,0f0,0f0]) # Float32 camera
 
 default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist; elem_type::Type{T}) where T =
 	default_camera(Vec3{T}(lookfrom), Vec3{T}(lookat), Vec3{T}(vup), 
@@ -560,7 +559,7 @@ end
 		depth: how many more levels of recursive ray bounces can we still compute?"""
 @inline @fastmath function ray_color(r::Ray{T}, world::HittableList, depth=16) where T
     if depth <= 0
-		return @SVector T[0,0,0]
+		return SA{T}[0,0,0]
 	end
 		
 	rec = hit(world, r, T(1e-4), typemax(T))
@@ -577,7 +576,7 @@ end
 		if s.reflected
 			return s.attenuation .* ray_color(s.r, world, depth-1)
 		else
-			return @SVector T[0,0,0]
+			return SA{T}[0,0,0]
 		end
     else
         skycolor(r)
@@ -613,7 +612,7 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	#for j in 1:image_width, i in 1:image_height # iterate over each column (SLOWER?!)
 	Threads.@threads for i in 1:image_height
 		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
-			accum_color = @SVector T[0,0,0]
+			accum_color = SA{T}[0,0,0]
 			u = convert(T, j/image_width)
 			v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
 			
@@ -639,7 +638,7 @@ end
 # Float32/Float64
 ELEM_TYPE = Float64
 
-t_default_cam = default_camera(@SVector ELEM_TYPE[0,0,0])
+t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 
 # After some optimization:
 #  46.506 ms (917106 allocations: 16.33 MiB)
@@ -739,7 +738,7 @@ end
 end
 
 @inline @fastmath function scatter(mat::Dielectric{T}, r_in::Ray{T}, rec::HitRecord{T}) where T
-	attenuation = @SVector T[1,1,1]
+	attenuation = SA{T}[1,1,1]
 	refraction_ratio = rec.front_face ? (one(T)/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
 	cosθ = min(-r_in.dir⋅rec.n⃗, one(T))
 	sinθ = √(one(T) - cosθ^2)
@@ -757,15 +756,15 @@ end
 	spheres = Sphere[]
 	
 	# small center sphere
-	push!(spheres, Sphere((@SVector T[0,0,-1]), T(0.5), Lambertian(@SVector T[0.1,0.2,0.5])))
+	push!(spheres, Sphere((SA{T}[0,0,-1]), T(0.5), Lambertian(SA{T}[0.1,0.2,0.5])))
 	
 	# ground sphere (planet?)
-	push!(spheres, Sphere((@SVector T[0,-100.5,-1]), T(100), Lambertian(@SVector T[0.8,0.8,0.0])))
+	push!(spheres, Sphere((SA{T}[0,-100.5,-1]), T(100), Lambertian(SA{T}[0.8,0.8,0.0])))
 	
 	# # left and right spheres.
 	# # Use a negative radius on the left sphere to create a "thin bubble" 
-	push!(spheres, Sphere((@SVector T[-1,0,-1]), T(left_radius), Dielectric(T(1.5)))) 
-	push!(spheres, Sphere((@SVector T[1,0,-1]), T(0.5), Metal((@SVector T[0.8,0.6,0.2]), T(0))))
+	push!(spheres, Sphere((SA{T}[-1,0,-1]), T(left_radius), Dielectric(T(1.5)))) 
+	push!(spheres, Sphere((SA{T}[1,0,-1]), T(0.5), Metal((SA{T}[0.8,0.6,0.2]), T(0))))
 	HittableList(spheres)
 end
 
@@ -780,8 +779,8 @@ render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 # the hit surface... 
 render(scene_diel_spheres(-0.5; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 
-render(scene_diel_spheres(; elem_type=ELEM_TYPE), default_camera((@SVector ELEM_TYPE[-2,2,1]), (@SVector ELEM_TYPE[0,0,-1]),
-																 (@SVector ELEM_TYPE[0,1,0]), ELEM_TYPE(20)), 96, 16)
+render(scene_diel_spheres(; elem_type=ELEM_TYPE), default_camera((SA{ELEM_TYPE}[-2,2,1]), (SA{ELEM_TYPE}[0,0,-1]),
+																 (SA{ELEM_TYPE}[0,1,0]), ELEM_TYPE(20)), 96, 16)
 
 
 #md"# Positioning camera"
@@ -789,8 +788,8 @@ render(scene_diel_spheres(; elem_type=ELEM_TYPE), default_camera((@SVector ELEM_
 function scene_blue_red_spheres(; elem_type::Type{T}) where T # dielectric spheres
 	spheres = Sphere[]
 	R = cos(pi/4)
-	push!(spheres, Sphere((@SVector T[-R,0,-1]), R, Lambertian(@SVector T[0,0,1]))) 
-	push!(spheres, Sphere((@SVector T[ R,0,-1]), R, Lambertian(@SVector T[1,0,0]))) 
+	push!(spheres, Sphere((SA{T}[-R,0,-1]), R, Lambertian(SA{T}[0,0,1]))) 
+	push!(spheres, Sphere((SA{T}[ R,0,-1]), R, Lambertian(SA{T}[1,0,0]))) 
 	HittableList(spheres)
 end
 
@@ -802,15 +801,15 @@ function scene_random_spheres(; elem_type::Type{T}) where T # dielectric spheres
 	spheres = Sphere[]
 
 	# ground 
-	push!(spheres, Sphere((@SVector T[0,-1000,-1]), T(1000), 
-						  Lambertian(@SVector T[0.5,0.5,0.5])))
+	push!(spheres, Sphere((SA{T}[0,-1000,-1]), T(1000), 
+						  Lambertian(SA{T}[0.5,0.5,0.5])))
 
 	for a in -11:10, b in -11:10
 		choose_mat = rand(_rng, T)
-		center = @SVector [a + T(0.9)*rand(_rng, T), T(0.2), b + T(0.9)*rand(_rng, T)]
+		center = SA[a + T(0.9)*rand(_rng, T), T(0.2), b + T(0.9)*rand(_rng, T)]
 
 		# skip spheres too close?
-		if norm(center - @SVector T[4,0.2,0]) < T(0.9) continue end 
+		if norm(center - SA{T}[4,0.2,0]) < T(0.9) continue end 
 			
 		if choose_mat < T(0.8)
 			# diffuse
@@ -827,11 +826,11 @@ function scene_random_spheres(; elem_type::Type{T}) where T # dielectric spheres
 		end
 	end
 
-	push!(spheres, Sphere((@SVector T[0,1,0]), T(1), Dielectric(T(1.5))))
-	push!(spheres, Sphere((@SVector T[-4,1,0]), T(1), 
-						  Lambertian(@SVector T[0.4,0.2,0.1])))
-	push!(spheres, Sphere((@SVector T[4,1,0]), T(1), 
-						  Metal((@SVector T[0.7,0.6,0.5]), T(0))))
+	push!(spheres, Sphere((SA{T}[0,1,0]), T(1), Dielectric(T(1.5))))
+	push!(spheres, Sphere((SA{T}[-4,1,0]), T(1), 
+						  Lambertian(SA{T}[0.4,0.2,0.1])))
+	push!(spheres, Sphere((SA{T}[4,1,0]), T(1), 
+						  Metal((SA{T}[0.7,0.6,0.5]), T(0))))
 	HittableList(spheres)
 end
 
