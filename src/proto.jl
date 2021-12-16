@@ -465,7 +465,7 @@ const HittableList = Vector{Hittable}
 @inline function hit(hittables::HittableList, r::Ray{T}, tmin::T, tmax::T) where T
     closest = tmax # closest t so far
     rec = _no_hit
-    @simd for h in hittables
+    for h in hittables # @simd seems to make no difference...?
         temprec = hit(h, r, tmin, closest)
         if temprec !== _no_hit
             rec = temprec
