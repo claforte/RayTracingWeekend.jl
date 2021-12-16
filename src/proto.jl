@@ -359,7 +359,7 @@ abstract type Material{T <: AbstractFloat} end
 
 "Record a hit between a ray and an object's surface"
 mutable struct HitRecord{T <: AbstractFloat}
-	t::T # vector from the ray's origin to the intersection with a surface. 
+	t::T # distance from the ray's origin to the intersection with a surface. 
 	
 	# If t==Inf32, there was no hit, and all following values are undefined!
 	#
