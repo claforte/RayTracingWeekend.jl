@@ -13,6 +13,19 @@ Threads.nthreads()
 const Vec3{T<:AbstractFloat} = SVector{3, T}
 t_col = SA[0.4, 0.5, 0.1] # test color. See StaticArrays.jl
 
+# Adapted from @Christ_Foster's: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c/72958/40
+@inline @inbounds function Base.getproperty(v::SVector{3}, name::Symbol)
+    name === :x || name === :r ? getfield(v, :data)[1] :
+    name === :y || name === :g ? getfield(v, :data)[2] :
+    name === :z || name === :b ? getfield(v, :data)[3] : getfield(v, name)
+end
+
+@inline @inbounds function Base.getproperty(v::SVector{2}, name::Symbol)
+    name === :x || name === :r ? getfield(v, :data)[1] :
+    name === :y || name === :g ? getfield(v, :data)[2] : getfield(v, name)
+end
+
+
 squared_length(v::Vec3) = v ⋅ v
 
 # Before optimization:
@@ -36,7 +49,7 @@ squared_length(v::Vec3) = v ⋅ v
 #     1.152 ns (0 allocations: 0 bytes)
 # use `const Vec3{T<:AbstractFloat} = SVector{3, T}`:
 #     1.162 ns (0 allocations: 0 bytes) (i.e. equivalent)
-#@btime squared_length($t_col)
+@btime squared_length($t_col)
 
 @inline near_zero(v::Vec3) = squared_length(v) < 1e-5
 #@btime near_zero($t_col) # 1.382 ns (0 allocations: 0 bytes)
@@ -108,7 +121,7 @@ _t_ray1 = Ray(_origin, _v3_minusY)
 @inline function skycolor(ray::Ray{T}) where T
 	white = SA[1.0, 1.0, 1.0]
 	skyblue = SA[0.5, 0.7, 1.0]
-	t = T(0.5)*(ray.dir[2] + one(T))
+	t = T(0.5)*(ray.dir.y + one(T))
     (one(T)-t)*white + t*skyblue
 end
 # 1.402 ns (0 allocations: 0 bytes)
@@ -546,7 +559,7 @@ default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist; 
 
 @inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
 	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
-	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
+	offset = c.u * rd.x + c.v * rd.y #offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
 									 t*c.vertical - c.origin - offset))
 end
@@ -912,6 +925,8 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #  302.952 ms (1892513 allocations: 144.88 MiB)
 # Convert Camera and every Material structs to non-mutable:
 #  301.042 ms (1849711 allocations: 141.61 MiB)  (i.e. - unchanged)
+# Adapt @Christ_Foster's Base.getproperty w/ @inline @inbounds:
+#  292.603 ms (1856398 allocations: 142.12 MiB) (ran multiple times, seems like real, 3-5% speed-up)
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 @btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
