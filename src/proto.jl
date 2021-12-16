@@ -84,7 +84,7 @@ gradient(200,100)
 #rgb($t_col) # 1.172 ns (0 allocations: 0 bytes)
 
 @inline rgb_gamma2(v::Vec3) = RGB(sqrt.(v)...)
-rgb_gamma2($t_col) # 3.927 ns (0 allocations: 0 bytes)
+#rgb_gamma2($t_col) # 3.927 ns (0 allocations: 0 bytes)
 
 struct Ray{T}
 	origin::Vec3{T} # Point 
@@ -329,7 +329,7 @@ end
 # Float64: 351.164 μs (2 allocations: 468.83 KiB)
 # Above was all using 1 single thread. With 16 threads:
 #   64.612 μs (83 allocations: 241.75 KiB)
-@btime main(200,100,sphere_scene2, Float32)
+#@btime main(200,100,sphere_scene2, Float32)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -382,7 +382,7 @@ struct Scatter{T<: AbstractFloat}
 end
 
 #"Diffuse material"
-mutable struct Lambertian{T} <: Material{T}
+struct Lambertian{T} <: Material{T}
 	albedo::Vec3{T}
 end
 
@@ -458,7 +458,7 @@ end
 
 #md"# Metal material"
 
-mutable struct Metal{T} <: Material{T}
+struct Metal{T} <: Material{T}
 	albedo::Vec3{T}
 	fuzz::T # how big the sphere used to generate fuzzy reflection rays. 0=none
 	@inline Metal(a::Vec3{T}, f::T=0.0) where T = new{T}(a,f)
@@ -499,7 +499,7 @@ end
 #md"""# Camera
 
 # Adapted from C++'s sections 7.2, 11.1 """
-mutable struct Camera{T <: AbstractFloat}
+struct Camera{T <: AbstractFloat}
 	origin::Vec3{T}
 	lower_left_corner::Vec3{T}
 	horizontal::Vec3{T}
@@ -726,7 +726,7 @@ t_refract_widerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 2.0) 
 t_refract_narrowerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 0.5) # narrower angle
 @assert isapprox(t_refract_narrowerθ, @SVector[0.3,-0.953939,0.0]; atol=1e-3)
 
-mutable struct Dielectric{T} <: Material{T}
+struct Dielectric{T} <: Material{T}
 	ir::T # index of refraction, i.e. η.
 end
 
@@ -911,7 +911,10 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #  308.217 ms (1830162 allocations: 140.12 MiB)
 # Using @inbounds, @simd in low-level functions:
 #  302.952 ms (1892513 allocations: 144.88 MiB)
-render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
+# Convert Camera and every Material structs to non-mutable:
+#  301.042 ms (1849711 allocations: 141.61 MiB)  (i.e. - unchanged)
+print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
+@btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -937,8 +940,8 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32)
 #    1298.522674 seconds (5.43 G allocations: 404.519 GiB, 10.18% gc time)
 # Using @inbounds, @simd in low-level functions:
 #    1314.510565 seconds (5.53 G allocations: 411.753 GiB, 10.21% gc time) # NOTE: difference due to randomness?
-print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
-@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
+#print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
+#@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
 
 
 t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
@@ -979,7 +982,7 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 #    6.766 ms (161000 allocations: 12.40 MiB)
 # @inbounds and @simd in low-level functions
 #    6.519 ms (160609 allocations: 12.37 MiB)
-@btime render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
+render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
 
 # using Profile
 # Profile.clear_malloc_data()

@@ -123,16 +123,16 @@ Unlike the C++ implementation:
 - https://docs.julialang.org/en/v1/manual/integers-and-floating-point-numbers/#Floating-Point-Numbers
 - [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl): This was useful as a starting point as I developed something roughly similar at first, then I tried it optimize it further.
 
-# Thanks to:
+# Special thanks to:
 
 - @woclass: who recommended major clean-ups and speed-ups, I learnt a lot from his code!
+- @Chris_Foster: lots of great suggestions to clean-up and speed-up the code!
 
 # Possible next steps
 
 ## Short-term
 
-- try fastmath
-- try 14 threads for a fair comparison vs gcc
+- Try Chris_Foster's many great suggestions
 - investigate whether Float32 perf degradation can be fixed (doubled the allocations...)
 - break the code into multiple files...
 - replace `const _no_hit = HitRecord{Float64}()` by a distance check (would be type-independent)
