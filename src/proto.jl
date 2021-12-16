@@ -49,7 +49,7 @@ squared_length(v::Vec3) = v ⋅ v
 #     1.152 ns (0 allocations: 0 bytes)
 # use `const Vec3{T<:AbstractFloat} = SVector{3, T}`:
 #     1.162 ns (0 allocations: 0 bytes) (i.e. equivalent)
-@btime squared_length($t_col)
+#@btime squared_length($t_col)
 
 @inline near_zero(v::Vec3) = squared_length(v) < 1e-5
 #@btime near_zero($t_col) # 1.382 ns (0 allocations: 0 bytes)
@@ -309,7 +309,7 @@ end
 #    63.751 μs (83 allocations: 476.14 KiB)
 # Eliminate unnecessary r.dir ⋅ r.dir: 
 #    61.416 μs (83 allocations: 476.14 KiB)
-@btime main(200, 100, sphere_scene1, Float64) 
+#@btime main(200, 100, sphere_scene1, Float64) 
 
 #md"# Chapter 6: Surface normals and multiple objects"
 
@@ -349,7 +349,7 @@ end
 # Eliminate unnecessary r.dir ⋅ r.dir: 
 #   61.586 μs (82 allocations: 241.72 KiB)
 #print("@btime main(200,100,sphere_scene2, Float32):")
-main(200,100,sphere_scene2, Float32)
+#main(200,100,sphere_scene2, Float32)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -642,10 +642,8 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 					δu = δv = T(0)
 				else
 					# Supersampling antialiasing.
-					# claforte: I think the C++ version had a bug, the rand offset was
-					# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-					δu = (rand(_rng, T)-T(0.5)) / f32_image_width
-					δv = (rand(_rng, T)-T(0.5)) / f32_image_height
+					δu = rand(_rng, T) / f32_image_width
+					δv = rand(_rng, T) / f32_image_height
 				end
 				ray = get_ray(cam, u+δu, v+δv)
 				accum_color += ray_color(ray, scene)
@@ -935,6 +933,8 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #  301.042 ms (1849711 allocations: 141.61 MiB)  (i.e. - unchanged)
 # Adapt @Christ_Foster's Base.getproperty w/ @inline @inbounds:
 #  292.603 ms (1856398 allocations: 142.12 MiB) (ran multiple times, seems like real, 3-5% speed-up)
+# Eliminate the off-by-half-a-pixel offset:
+#  286.873 ms (1811412 allocations: 138.69 MiB) (ran multiple times, seems like ~2.5% speed-up)
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 @btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
@@ -962,6 +962,9 @@ print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 #    1298.522674 seconds (5.43 G allocations: 404.519 GiB, 10.18% gc time)
 # Using @inbounds, @simd in low-level functions:
 #    1314.510565 seconds (5.53 G allocations: 411.753 GiB, 10.21% gc time) # NOTE: difference due to randomness?
+# Adapt @Christ_Foster's Base.getproperty w/ @inline @inbounds: (expect 3-5% speed-up)
+# Eliminate the off-by-half-a-pixel offset: (expect ~2.5% speed-up)
+#    TBA
 #print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
 #@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
 
