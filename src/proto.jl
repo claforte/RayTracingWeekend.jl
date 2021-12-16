@@ -287,7 +287,8 @@ main(200, 100, skycolor, Float32)
 # @fastmath speeds up a lot!
 @inline @fastmath function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
 	oc = r.origin - center
-	a = r.dir ⋅ r.dir
+	#a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+	a = 1
 	b = 2oc ⋅ r.dir
 	c = (oc ⋅ oc) - radius*radius
 	discriminant = b*b - 4a*c
@@ -306,13 +307,16 @@ end
 # Float64: 173.818 μs (2 allocations: 468.83 KiB)
 # w/ @fastmath in hit_sphere1:
 #    63.751 μs (83 allocations: 476.14 KiB)
-main(200, 100, sphere_scene1, Float64) 
+# Eliminate unnecessary r.dir ⋅ r.dir: 
+#    61.416 μs (83 allocations: 476.14 KiB)
+@btime main(200, 100, sphere_scene1, Float64) 
 
 #md"# Chapter 6: Surface normals and multiple objects"
 
 @inline function hit_sphere2(center::Vec3{T}, radius::T, r::Ray{T}) where T
 	oc = r.origin - center
-	a = r.dir ⋅ r.dir
+	#a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+	a = 1
 	b = 2oc ⋅ r.dir
 	c = (oc ⋅ oc) - radius^2
 	discriminant = b*b - 4a*c
@@ -342,7 +346,10 @@ end
 # Float64: 351.164 μs (2 allocations: 468.83 KiB)
 # Above was all using 1 single thread. With 16 threads:
 #   64.612 μs (83 allocations: 241.75 KiB)
-#@btime main(200,100,sphere_scene2, Float32)
+# Eliminate unnecessary r.dir ⋅ r.dir: 
+#   61.586 μs (82 allocations: 241.72 KiB)
+#print("@btime main(200,100,sphere_scene2, Float32):")
+main(200,100,sphere_scene2, Float32)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -429,8 +436,9 @@ const _no_hit = HitRecord{Float64}() # claforte: HACK! favoring Float64...
 
 @inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T) where T
     oc = r.origin - s.center
-    a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
-    half_b = oc ⋅ r.dir
+    #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+	a = 1
+	half_b = oc ⋅ r.dir
     c = oc⋅oc - s.radius^2
     discriminant = half_b^2 - a*c
 	if discriminant < 0 return _no_hit end

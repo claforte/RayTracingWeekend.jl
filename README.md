@@ -115,6 +115,8 @@ Unlike the C++ implementation:
 - Julia uses i for row, j for column, so I inverted some of the loops (to iterate through columns first) and some of the C++ code's variable names.
 - When saving final pixels, IIUC the C++ code uses a Y-up coordinate system for writing images. Julia's `Image`s and matrices point down, so I used `(ny-i)` instead of `i` for the row number.
 - Pluto.jl supports having cells/code defined in arbitrary orders. I tried to keep the code from low-level to high-level, but in some cases it wasn't practical, especially since Pluto.jl doesn't seem to support moving more than one cell at a time.
+- I normalize the ray direction right away, instead of optionally doing it in later functions... I think it's easier to reason about it that way, and the extra cost is probably marginal.
+- I use a `const _no_hit = HitRecord{Float64}()` to indicate a no hit... I thought this was speed things up, but this is probably a bad idea...
 
 
 # References:
