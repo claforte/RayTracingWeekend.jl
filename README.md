@@ -132,7 +132,10 @@ Unlike the C++ implementation:
 - [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
 - [ChrisRackauckhas's awesome MIT course of Parallel Computing and Scientific Machine Learning](https://github.com/mitmath/18337): I only watched the first few lessons on performance optimization so far, but I learnt a lot already and highly recommend it.
 - https://docs.julialang.org/en/v1/manual/integers-and-floating-point-numbers/#Floating-Point-Numbers
-- [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl): This was useful as a starting point as I developed something roughly similar at first, then I tried it optimize it further.
+- Other Julia raytracers
+  - [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl): This was useful as a starting point as I developed something roughly similar at first, then I tried it optimize it further.
+  - https://github.com/pxl-th/Trace.jl : more sophisticated raytracer based on this excellent book: Physically Based Rendering: From Theory to Implementation"
+  - https://github.com/paulmelis/riow.jl : another example based on Peter Shirley's books
 
 # Special thanks to:
 

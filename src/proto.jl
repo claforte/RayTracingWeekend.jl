@@ -370,11 +370,10 @@ abstract type Hittable end
 abstract type Material{T <: AbstractFloat} end
 
 "Record a hit between a ray and an object's surface"
-mutable struct HitRecord{T <: AbstractFloat}
+struct HitRecord{T <: AbstractFloat}
 	t::T # distance from the ray's origin to the intersection with a surface. 
-	
 	# If t==Inf32, there was no hit, and all following values are undefined!
-	#
+	
 	p::Vec3{T} # point of the intersection between an object's surface and a ray
 	n⃗::Vec3{T} # surface's outward normal vector, points towards outside of object?
 	
@@ -383,7 +382,6 @@ mutable struct HitRecord{T <: AbstractFloat}
 	front_face::Bool
 	mat::Material{T}
 
-	@inline HitRecord{T}() where T = new{T}(typemax(T)) # no hit!
 	@inline HitRecord(t::T,p,n⃗,front_face,mat) where T = new{T}(t,p,n⃗,front_face,mat)
 end
 
@@ -398,7 +396,7 @@ end
 # """
 
 """Equivalent to `hit_record.set_face_normal()`"""
-@inline @fastmath function ray_to_HitRecord(t::T, p, outward_n⃗, r_dir::Vec3{T}, mat::Material{T}) where T
+@inline @fastmath function ray_to_HitRecord(t::T, p, outward_n⃗, r_dir::Vec3{T}, mat::Material{T})::Union{HitRecord,Nothing} where T
 	front_face = r_dir ⋅ outward_n⃗ < 0
 	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
 	HitRecord(t,p,n⃗,front_face,mat)
@@ -431,7 +429,7 @@ end
 	Args:
 		rec: the HitRecord of the surface from which to scatter the ray.
 
-	Return missing if it's fully absorbed. """
+	Return `nothing`` if it's fully absorbed. """
 @inline @fastmath function scatter(mat::Lambertian{T}, r::Ray{T}, rec::HitRecord{T})::Scatter{T} where T
 	scatter_dir = rec.n⃗ + random_vec3_on_sphere(T)
 	if near_zero(scatter_dir) # Catch degenerate scatter direction
@@ -444,16 +442,14 @@ end
 	return Scatter(scattered_r, attenuation)
 end
 
-const _no_hit = HitRecord{Float64}() # claforte: HACK! favoring Float64...
-
-@inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T) where T
+@inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
     oc = r.origin - s.center
     #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
 	a = 1
 	half_b = oc ⋅ r.dir
     c = oc⋅oc - s.radius^2
     discriminant = half_b^2 - a*c
-	if discriminant < 0 return _no_hit end
+	if discriminant < 0 return nothing end # no hit!
 	sqrtd = √discriminant
 	
 	# Find the nearest root that lies in the acceptable range
@@ -461,7 +457,7 @@ const _no_hit = HitRecord{Float64}() # claforte: HACK! favoring Float64...
 	if root < tmin || tmax < root
 		root = (-half_b + sqrtd) / a
 		if root < tmin || tmax < root
-			return _no_hit
+			return nothing # no hit!
 		end
 	end
 	
@@ -474,17 +470,18 @@ end
 const HittableList = Vector{Hittable}
 
 #"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
-@inline function hit(hittables::HittableList, r::Ray{T}, tmin::T, tmax::T) where T
+@inline function hit(hittables::HittableList, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
     closest = tmax # closest t so far
-    rec = _no_hit
-    for h in hittables # @simd seems to make no difference...?
-        temprec = hit(h, r, tmin, closest)
-        if temprec !== _no_hit
-            rec = temprec
-            closest = rec.t # i.e. ignore any further hit > this one's.
+    best_rec::Union{HitRecord,Nothing} = nothing # by default, no hit
+    @inbounds for i in eachindex(hittables) # @paulmelis reported gave him a 4X speedup?!
+		h = hittables[i]
+        rec = hit(h, r, tmin, closest)
+        if rec !== nothing
+            best_rec = rec
+            closest = best_rec.t # i.e. ignore any further hit > this one's.
         end
     end
-    rec
+    best_rec
 end
 
 @inline color_vec3_in_rgb(v::Vec3{T}) where T = 0.5normalize(v) + SA{T}[0.5,0.5,0.5]
@@ -595,8 +592,8 @@ end
 		return SA{T}[0,0,0]
 	end
 		
-	rec = hit(world, r, T(1e-4), typemax(T))
-    if rec !== _no_hit # claforte TODO: check if T is typemax instead?
+	rec::Union{HitRecord,Nothing} = hit(world, r, T(1e-4), typemax(T))
+    if rec !== nothing
 		# For debugging, represent vectors as RGB:
 		# claforte TODO: adapt to latest code!
 		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
@@ -711,7 +708,13 @@ t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #   4.465 ms (65680 allocations: 5.13 MiB)
-#render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
+# Lots of optimizations... ending with make HitRecord non-mutable:
+#   2.225 ms (445188 allocations: 34.08 MiB)
+# Using non-mutable HitRecord, Union{HitRecord,Missing}, ismissing():
+#   976.365 μs (65574 allocations: 5.12 MiB)
+# Using @paulmelis' style of hit(): @inbounds for i in eachindex(hittables) and Union{HitRecord, Nothing}
+#   951.447 μs (65574 allocations: 5.12 MiB)
+render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
 # Iterate over each row: 500.334 μs
@@ -728,7 +731,13 @@ t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #   314.094 μs (4009 allocations: 434.97 KiB)
-#render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
+# Lots of optimizations... ending with make HitRecord non-mutable:
+#   136.388 μs (28306 allocations: 2.28 MiB)
+# Using non-mutable HitRecord, Union{HitRecordMissing}, ismissing():
+#   102.764 μs (4314 allocations: 459.41 KiB)
+# Using @paulmelis' style of hit(): @inbounds for i in eachindex(hittables) and Union{HitRecord, Nothing}
+#   101.161 μs (4314 allocations: 459.41 KiB)
+render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 
 #render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 
@@ -803,13 +812,13 @@ end
 	HittableList(spheres)
 end
 
-#scene_diel_spheres(; elem_type=ELEM_TYPE)
+scene_diel_spheres(; elem_type=ELEM_TYPE)
 
 #render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 #render(scene_diel_spheres(), default_camera(), 320, 32)
 
 # Hollow Glass sphere using a negative radius
-#ender(scene_diel_spheres(-0.5; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
+#render(scene_diel_spheres(-0.5; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 
 #render(scene_diel_spheres(; elem_type=ELEM_TYPE), default_camera((SA{ELEM_TYPE}[-2,2,1]), (SA{ELEM_TYPE}[0,0,-1]),
 #																 (SA{ELEM_TYPE}[0,1,0]), ELEM_TYPE(20)), 96, 16)
@@ -906,7 +915,9 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 #     2.168 ms (13791 allocations: 1.15 MiB)
 # Using  bunch of @inbounds, @simd in low-level functions
 #     2.076 ms (13861 allocations: 1.15 MiB)
-#render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
+# Lots of optimizations, up to `Using non-mutable HitRecord, Union{HitRecordMissing}, ismissing():`
+#     2.042 ms (14825 allocations: 1.23 MiB)
+#@btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
 # after lots of optimizations, up to switching to Float32 + reducing allocations using rand_vec3!(): 
@@ -949,8 +960,18 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 #  286.873 ms (1811412 allocations: 138.69 MiB) (ran multiple times, seems like ~2.5% speed-up)
 # Fixed, per-thread RNGs with fixed seeds
 #  286.575 ms (1884433 allocations: 144.26 MiB) (i.e. maybe a tiny bit faster considering this fixed seed has more allocations?)
+# Make HitRecord non-mutable:
+#   29.733 s (937962909 allocations: 69.88 GiB) (WTF!)
+# Lots of optimizations, up to `Using non-mutable HitRecord, Union{HitRecordMissing}, ismissing():`
+#  306.011 ms (1884433 allocations: 144.26 MiB) (Still slower... Hum)
+# Using @paulmelis' style of hit(): @inbounds for i in eachindex(hittables) and Union{HitRecord, Nothing}
+#  304.877 ms (1884433 allocations: 144.26 MiB)
+# Extract the scene creation from the render() call:
+#  300.344 ms (1883484 allocations: 144.21 MiB)
 # print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
-# render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
+# reseed!()
+# _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
+# @btime render($_scene_random_spheres, $t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -1030,5 +1051,5 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 using Profile
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 16, 1)
 Profile.clear_malloc_data()
-render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 16, 4)
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 17, 13)
 
