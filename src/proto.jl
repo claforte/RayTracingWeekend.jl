@@ -952,8 +952,8 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #  286.873 ms (1811412 allocations: 138.69 MiB) (ran multiple times, seems like ~2.5% speed-up)
 # Fixed, per-thread RNGs with fixed seeds
 #  286.575 ms (1884433 allocations: 144.26 MiB) (i.e. maybe a tiny bit faster considering this fixed seed has more allocations?)
-# print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
-# @btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
+print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
+@btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -986,8 +986,8 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #    1282.437499 seconds (5.53 G allocations: 411.742 GiB, 10.08% gc time) (i.e. 2.5% speed-up... currently GC- and memory-bound?)
 #  Using 14 threads: (21m45s)
 #    1305.767627 seconds (5.53 G allocations: 411.741 GiB, 9.97% gc time)
-print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
-@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
+#print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
+#@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
 
 
 t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
