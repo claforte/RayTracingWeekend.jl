@@ -167,7 +167,7 @@ end
     @inbounds rng = TRNG[Threads.threadid()]
     rand(rng, T)
 end
-@btime trand()
+#@btime trand()
 
 @inline random_between(min::T=0, max::T=1) where T = trand(T)*(max-min) + min # equiv to random_double()
 # Float32: 4.519 ns (0 allocations: 0 bytes)
@@ -711,7 +711,7 @@ t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #   4.465 ms (65680 allocations: 5.13 MiB)
-render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
+#render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
 # Iterate over each row: 500.334 μs
@@ -728,9 +728,9 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 sampl
 # Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 # Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
 #   314.094 μs (4009 allocations: 434.97 KiB)
-render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
+#render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 
-render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
+#render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 
 #md"""# Dielectrics
 
@@ -803,19 +803,16 @@ end
 	HittableList(spheres)
 end
 
-scene_diel_spheres(; elem_type=ELEM_TYPE)
+#scene_diel_spheres(; elem_type=ELEM_TYPE)
 
-render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
+#render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 #render(scene_diel_spheres(), default_camera(), 320, 32)
 
 # Hollow Glass sphere using a negative radius
-# claforte: getting a weird black halo in the glass sphere... might be due to my
-# "fix" for previous black spots, by moving the RecordHit point a bit away from 
-# the hit surface... 
-render(scene_diel_spheres(-0.5; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
+#ender(scene_diel_spheres(-0.5; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 
-render(scene_diel_spheres(; elem_type=ELEM_TYPE), default_camera((SA{ELEM_TYPE}[-2,2,1]), (SA{ELEM_TYPE}[0,0,-1]),
-																 (SA{ELEM_TYPE}[0,1,0]), ELEM_TYPE(20)), 96, 16)
+#render(scene_diel_spheres(; elem_type=ELEM_TYPE), default_camera((SA{ELEM_TYPE}[-2,2,1]), (SA{ELEM_TYPE}[0,0,-1]),
+#																 (SA{ELEM_TYPE}[0,1,0]), ELEM_TYPE(20)), 96, 16)
 
 
 #md"# Positioning camera"
@@ -828,7 +825,7 @@ function scene_blue_red_spheres(; elem_type::Type{T}) where T # dielectric spher
 	HittableList(spheres)
 end
 
-render(scene_blue_red_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
+#render(scene_blue_red_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 
 #md"# Random spheres"
 
@@ -909,7 +906,7 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 #     2.168 ms (13791 allocations: 1.15 MiB)
 # Using  bunch of @inbounds, @simd in low-level functions
 #     2.076 ms (13861 allocations: 1.15 MiB)
-render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
+#render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
 # after lots of optimizations, up to switching to Float32 + reducing allocations using rand_vec3!(): 
@@ -952,8 +949,8 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #  286.873 ms (1811412 allocations: 138.69 MiB) (ran multiple times, seems like ~2.5% speed-up)
 # Fixed, per-thread RNGs with fixed seeds
 #  286.575 ms (1884433 allocations: 144.26 MiB) (i.e. maybe a tiny bit faster considering this fixed seed has more allocations?)
-print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
-@btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
+# print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
+# render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -1028,9 +1025,10 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 #    6.766 ms (161000 allocations: 12.40 MiB)
 # @inbounds and @simd in low-level functions
 #    6.519 ms (160609 allocations: 12.37 MiB)
-render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
+#render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
 
-# using Profile
-# Profile.clear_malloc_data()
-# render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 16)
+using Profile
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 16, 1)
+Profile.clear_malloc_data()
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 16, 4)
 
