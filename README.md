@@ -40,7 +40,7 @@ All perf tests were run on my Ryzen 2700 (not overclocked) on Ubuntu 20.04.
 4. I examined the code, and it looks like it's using the same algorithms, i.e. no BVH. I also checked that the threaded model is similar.
 5. I have no idea whether GCC tries to vectorize the code, and by how much.
 
-Result of `time ./book1`: **22m59s**.
+Result of `time ./book1`: **22m59s** (1379s).
 
 ## GPSnoopy's ISPC implementation
 
@@ -68,8 +68,8 @@ Notes:
 - The C++ version uses a 32-bit Mersenne IIUC, might be a bit faster to compute and certainly much less random than the SOTA Xoroshiro128Plus I use in Julia.
 
 Latest results:
-- With 16 threads: **21m38s**
-- with 14 threads: **22m21s**, i.e. now a bit faster than the equivalent GCC C++ version!
+- With 16 threads: **21m22s**
+- with 14 threads: **21m45s** (1306s), i.e. now ~5.6% faster than the equivalent GCC C++ version!
 
 Detailed timings, starting from my original, super-slow version.
 ```
@@ -95,6 +95,15 @@ Above was all using 1 single thread. With 16 threads: (~20 minutes)
 Above was all using max bounces=4, since this looked fine to me (except the negatively scaled sphere). 
 Switching to max bounces=16 to match C++ version decreased performance by 7.2%:
    1298.522674 seconds (5.43 G allocations: 404.519 GiB, 10.18% gc time)
+Using @inbounds, @simd in low-level functions:
+   1314.510565 seconds (5.53 G allocations: 411.753 GiB, 10.21% gc time) # NOTE: difference due to randomness?
+Adapt @Christ_Foster's Base.getproperty w/ @inline @inbounds: (expect 3-5% speed-up)
+Eliminate the off-by-half-a-pixel offset: (expect ~2.5% speed-up)
+Fixed, per-thread RNGs with fixed seeds (expecting no noticeable change in speed)
+ Using 16 threads: (21m22s)
+   1282.437499 seconds (5.53 G allocations: 411.742 GiB, 10.08% gc time) (i.e. 2.5% speed-up... currently GC- and memory-bound?)
+ Using 14 threads: (21m45s)
+   1305.767627 seconds (5.53 G allocations: 411.741 GiB, 9.97% gc time)
 ```
 
 # Adapting C++ --> Julia
@@ -134,28 +143,25 @@ Unlike the C++ implementation:
 
 ## Short-term
 
-- Try Chris_Foster's many great suggestions
 - investigate whether Float32 perf degradation can be fixed (doubled the allocations...)
+- update pluto_RayTracingWeekend.jl, then share on Twitter, etc.
 - break the code into multiple files...
 - replace `const _no_hit = HitRecord{Float64}()` by a distance check (would be type-independent)
   - then re-run Float32 and Float64 perf tests
 - Read on the SIMD libraries, try to figure out the best approach. (I’ll welcome any suggestion you have!)
-- update pluto_RayTracingWeekend.jl, then share on Twitter, etc.
 - save image, e.g. PNG
-- The only remaining allocations that appear expensive are of `HitRecord`s (on the stack)
-- Probably pre-allocate the ray bundles/paths (I don’t know how they are called in the litterature) to later 
-  simplify the GPU (and probably the SIMD) implementation.
-- implement versions of hit, scatter, etc. that operate on an entire tensor at once.
-  (i.e. efficiently parallelizable with SIMD or GPU)
-  - use FieldVector?
-- figure out the incorrect look in refraction of negatively scaled sphere
 - continue watching MIT course
 
 ## Long-term
 
-- SIMD, AVX, etc. Test on at least 2 CPUs.
-- GPU through CUDA, ROCM
 - Implement the rest of Peter Shirley's books, especially BVHs
+- GPU through CUDA, ROCM
+  - Probably integrate `Making the materials and hit system fully concrete with tight inner loops` idea from @Chris_Foster
+  - The only remaining allocations that appear expensive are of `HitRecord`s (on the stack)
+  - Probably pre-allocate the ray batches (I don’t know how they are called in the litterature) to later simplify the GPU (and probably the SIMD) implementation.
+  - implement versions of hit, scatter, etc. that operate on an entire tensor at once.
+  (i.e. efficiently parallelizable with SIMD or GPU)
+  - use FieldVector and/or StructOfArrays?
 - Vulkan RT interface, e.g. port of https://github.com/KhronosGroup/Vulkan-Samples/tree/master/samples/extensions/raytracing_basic
 
 # Failed attempts

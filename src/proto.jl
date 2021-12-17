@@ -150,14 +150,26 @@ end
 #
 #@btime rgb(skycolor($_t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
 
-using RandomNumbers.Xorshifts
-const _rng = Xoroshiro128Plus()
+# Instantiate 1 RNG (Random Number Generator) per thread, for performance
+# Fix the random seeds, to make it easier to benchmark changes.
+using Random, RandomNumbers.Xorshifts
+const TRNG = [Xoroshiro128Plus(i) for i = 1:Threads.nthreads()]
 
-#using Random
-#const _rng = MersenneTwister() # TODO: make this per-thread
+reseed!() = for (i,rng) in enumerate(TRNG) Random.seed!(rng, i) end # reset the seed
+reseed!()
 
+@inline function trand() # thread-local rand()
+    @inbounds rng = TRNG[Threads.threadid()]
+    rand(rng)
+end
 
-@inline random_between(min::T=0, max::T=1) where T = rand(_rng, T)*(max-min) + min # equiv to random_double()
+@inline function trand(::Type{T}) where T # thread-local rand()
+    @inbounds rng = TRNG[Threads.threadid()]
+    rand(rng, T)
+end
+@btime trand()
+
+@inline random_between(min::T=0, max::T=1) where T = trand(T)*(max-min) + min # equiv to random_double()
 # Float32: 4.519 ns (0 allocations: 0 bytes)
 # Float64: 4.329 ns (0 allocations: 0 bytes)
 # rand() using Xoroshiro128Plus _rng w/ Float64:
@@ -622,6 +634,10 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	f32_image_width = convert(Float32, image_width)
 	f32_image_height = convert(Float32, image_height)
 	
+	# Reset the random seeds, so we always get the same images...
+	# Makes comparing performance more accurate.
+	reseed!() 
+
 	# Compared to C++, Julia:
 	# 1. is column-major, elements in a column are contiguous in memory
 	#    this is the opposite to C++.
@@ -642,8 +658,8 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 					δu = δv = T(0)
 				else
 					# Supersampling antialiasing.
-					δu = rand(_rng, T) / f32_image_width
-					δv = rand(_rng, T) / f32_image_height
+					δu = trand(T) / f32_image_width
+					δv = trand(T) / f32_image_height
 				end
 				ray = get_ray(cam, u+δu, v+δv)
 				accum_color += ray_color(ray, scene)
@@ -762,7 +778,7 @@ end
 	cosθ = min(-r_in.dir⋅rec.n⃗, one(T))
 	sinθ = √(one(T) - cosθ^2)
 	cannot_refract = refraction_ratio * sinθ > one(T)
-	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand(_rng, T)
+	if cannot_refract || reflectance(cosθ, refraction_ratio) > trand(T)
 		dir = reflect(r_in.dir, rec.n⃗)
 	else
 		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
@@ -824,15 +840,15 @@ function scene_random_spheres(; elem_type::Type{T}) where T # dielectric spheres
 						  Lambertian(SA{T}[0.5,0.5,0.5])))
 
 	for a in -11:10, b in -11:10
-		choose_mat = rand(_rng, T)
-		center = SA[a + T(0.9)*rand(_rng, T), T(0.2), b + T(0.9)*rand(_rng, T)]
+		choose_mat = trand(T)
+		center = SA[a + T(0.9)*trand(T), T(0.2), b + T(0.9)*trand(T)]
 
 		# skip spheres too close?
 		if norm(center - SA{T}[4,0.2,0]) < T(0.9) continue end 
 			
 		if choose_mat < T(0.8)
 			# diffuse
-			albedo = @SVector[rand(_rng, T) for i ∈ 1:3] .* @SVector[rand(_rng, T) for i ∈ 1:3]
+			albedo = @SVector[trand(T) for i ∈ 1:3] .* @SVector[trand(T) for i ∈ 1:3]
 			push!(spheres, Sphere(center, T(0.2), Lambertian(albedo)))
 		elseif choose_mat < T(0.95)
 			# metal
@@ -893,7 +909,6 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 #     2.168 ms (13791 allocations: 1.15 MiB)
 # Using  bunch of @inbounds, @simd in low-level functions
 #     2.076 ms (13861 allocations: 1.15 MiB)
-
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # took 5020s in Pluto.jl, before optimizations!
@@ -935,8 +950,10 @@ render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 #  292.603 ms (1856398 allocations: 142.12 MiB) (ran multiple times, seems like real, 3-5% speed-up)
 # Eliminate the off-by-half-a-pixel offset:
 #  286.873 ms (1811412 allocations: 138.69 MiB) (ran multiple times, seems like ~2.5% speed-up)
-print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
-@btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
+# Fixed, per-thread RNGs with fixed seeds
+#  286.575 ms (1884433 allocations: 144.26 MiB) (i.e. maybe a tiny bit faster considering this fixed seed has more allocations?)
+# print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
+# @btime render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -964,9 +981,13 @@ print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 #    1314.510565 seconds (5.53 G allocations: 411.753 GiB, 10.21% gc time) # NOTE: difference due to randomness?
 # Adapt @Christ_Foster's Base.getproperty w/ @inline @inbounds: (expect 3-5% speed-up)
 # Eliminate the off-by-half-a-pixel offset: (expect ~2.5% speed-up)
-#    TBA
-#print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
-#@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
+# Fixed, per-thread RNGs with fixed seeds (expecting no noticeable change in speed)
+#  Using 16 threads: (21m22s)
+#    1282.437499 seconds (5.53 G allocations: 411.742 GiB, 10.08% gc time) (i.e. 2.5% speed-up... currently GC- and memory-bound?)
+#  Using 14 threads: (21m45s)
+#    1305.767627 seconds (5.53 G allocations: 411.741 GiB, 9.97% gc time)
+print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
+@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
 
 
 t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
