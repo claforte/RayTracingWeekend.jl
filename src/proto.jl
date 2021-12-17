@@ -26,7 +26,7 @@ end
 end
 
 
-squared_length(v::Vec3) = v ⋅ v
+@inline squared_length(v::Vec3) = v ⋅ v
 
 # Before optimization:
 #   677-699 ns (41 allocations: 2.77 KiB) # squared_length(v::SVector) = v ⋅ v; @btime squared_length(t_col)
@@ -308,7 +308,7 @@ main(200, 100, skycolor, Float32)
 end
 
 @inline function sphere_scene1(r::Ray{T}) where T
-	if hit_sphere1(SA[T(0), T(0), T(0)], T(0.5), r) # sphere of radius 0.5 centered at z=-1
+	if hit_sphere1(SA[T(0), T(0), T(-1)], T(0.5), r) # sphere of radius 0.5 centered at z=-1
 		return SA[T(1),T(0),T(0)] # red
 	else
 		skycolor(r)
@@ -321,7 +321,7 @@ end
 #    63.751 μs (83 allocations: 476.14 KiB)
 # Eliminate unnecessary r.dir ⋅ r.dir: 
 #    61.416 μs (83 allocations: 476.14 KiB)
-#@btime main(200, 100, sphere_scene1, Float64) 
+main(200, 100, sphere_scene1, Float64) 
 
 #md"# Chapter 6: Surface normals and multiple objects"
 
@@ -340,7 +340,7 @@ end
 end
 
 @inline function sphere_scene2(r::Ray{T}) where T
-	sphere_center = SA[T(0),T(0),T(0)]
+	sphere_center = SA[T(0),T(0),T(-1)]
 	t = hit_sphere2(sphere_center, T(0.5), r) # sphere of radius 0.5 centered at z=-1
 	if t > T(0)
 		n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
@@ -361,7 +361,7 @@ end
 # Eliminate unnecessary r.dir ⋅ r.dir: 
 #   61.586 μs (82 allocations: 241.72 KiB)
 #print("@btime main(200,100,sphere_scene2, Float32):")
-#main(200,100,sphere_scene2, Float32)
+main(200,100,sphere_scene2, Float32)
 
 "An object that can be hit by Ray"
 abstract type Hittable end
@@ -372,7 +372,6 @@ abstract type Material{T <: AbstractFloat} end
 "Record a hit between a ray and an object's surface"
 struct HitRecord{T <: AbstractFloat}
 	t::T # distance from the ray's origin to the intersection with a surface. 
-	# If t==Inf32, there was no hit, and all following values are undefined!
 	
 	p::Vec3{T} # point of the intersection between an object's surface and a ray
 	n⃗::Vec3{T} # surface's outward normal vector, points towards outside of object?
@@ -380,6 +379,7 @@ struct HitRecord{T <: AbstractFloat}
 	# If true, our ray hit from outside to the front of the surface. 
 	# If false, the ray hit from within.
 	front_face::Bool
+	
 	mat::Material{T}
 
 	@inline HitRecord(t::T,p,n⃗,front_face,mat) where T = new{T}(t,p,n⃗,front_face,mat)
@@ -581,6 +581,7 @@ default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist; 
 									 t*c.vertical - c.origin - offset))
 end
 
+get_ray(default_camera(SA[0f0,0f0,0f0]), 0.0f0, 0.0f0)
 #@btime get_ray(default_camera(), 0.0f0, 0.0f0)
 
 """Compute color for a ray, recursively
@@ -635,15 +636,6 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	# Makes comparing performance more accurate.
 	reseed!() 
 
-	# Compared to C++, Julia:
-	# 1. is column-major, elements in a column are contiguous in memory
-	#    this is the opposite to C++.
-	# 2. uses i=row, j=column as a convention.
-	# 3. is 1-based, so no need to subtract 1 from image_width, etc.
-	# 4. The array is Y-down, but `v` is Y-up 
-	# Usually iterating over 1 column at a time is faster, but
-	# surprisingly, in the first test below, the opposite pattern arises...
-	#for j in 1:image_width, i in 1:image_height # iterate over each column (SLOWER?!)
 	Threads.@threads for i in 1:image_height
 		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
 			accum_color = SA{T}[0,0,0]
@@ -761,12 +753,15 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 	normalize(r_out_perp + r_out_parallel)
 end
 
-@assert refract((@SVector[0.6,-0.8,0]), (@SVector[0.0,1.0,0.0]), 1.0) == @SVector[0.6,-0.8,0.0] # unchanged
+# unchanged angle
+@assert refract((@SVector[0.6,-0.8,0]), (@SVector[0.0,1.0,0.0]), 1.0) == @SVector[0.6,-0.8,0.0] 
 
-t_refract_widerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 2.0) # wider angle
+# wider angle
+t_refract_widerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 2.0)
 @assert isapprox(t_refract_widerθ, @SVector[0.87519,-0.483779,0.0]; atol=1e-3)
 
-t_refract_narrowerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 0.5) # narrower angle
+# narrower angle
+t_refract_narrowerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 0.5)
 @assert isapprox(t_refract_narrowerθ, @SVector[0.3,-0.953939,0.0]; atol=1e-3)
 
 struct Dielectric{T} <: Material{T}
@@ -812,8 +807,6 @@ end
 	HittableList(spheres)
 end
 
-scene_diel_spheres(; elem_type=ELEM_TYPE)
-
 #render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 #render(scene_diel_spheres(), default_camera(), 320, 32)
 
@@ -838,7 +831,7 @@ end
 
 #md"# Random spheres"
 
-function scene_random_spheres(; elem_type::Type{T}) where T # dielectric spheres
+function scene_random_spheres(; elem_type::Type{T}) where T
 	spheres = Sphere[]
 
 	# ground 
@@ -874,8 +867,6 @@ function scene_random_spheres(; elem_type::Type{T}) where T # dielectric spheres
 						  Metal((SA{T}[0.7,0.6,0.5]), T(0))))
 	HittableList(spheres)
 end
-
-scene_random_spheres(; elem_type=ELEM_TYPE)
 
 t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_type=ELEM_TYPE)
 
@@ -968,10 +959,10 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 #  304.877 ms (1884433 allocations: 144.26 MiB)
 # Extract the scene creation from the render() call:
 #  300.344 ms (1883484 allocations: 144.21 MiB)
-# print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
-# reseed!()
-# _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
-# @btime render($_scene_random_spheres, $t_cam1, 200, 32) 
+print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
+reseed!()
+_scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
+@btime render($_scene_random_spheres, $t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)

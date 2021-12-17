@@ -5,26 +5,36 @@ using Markdown
 using InteractiveUtils
 
 # ╔═╡ 38fdd4ef-c383-4f97-8451-c6f602307e7d
-using Images
+using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 
-# ╔═╡ 3dceca5d-7d1e-425b-9516-24e0a24adaff
-using LinearAlgebra
-# examples follow:
+# ╔═╡ 9114285c-4c5a-482c-94d8-21c3e4cc79e4
+using LoopVectorization: @turbo
 
-# ╔═╡ 3eb50f44-9091-45e8-a7e1-92d25b4b2090
-begin
-	using StaticArrays
-	Option{T} = Union{Missing, T}
+# ╔═╡ c58754e4-26b6-4b1d-be61-447496332757
+begin # Instantiate separate RNGs for each thread
+	using Random, RandomNumbers.Xorshifts
+	const TRNG = [Xoroshiro128Plus(i) for i = 1:Threads.nthreads()]
 	
-	squared_length(v::SVector{3,Float32}) = v ⋅ v
-	near_zero(v::SVector) = squared_length(v) < 1e-5
+	reseed!() = for (i,rng) in enumerate(TRNG) Random.seed!(rng, i) end # reset seeds
+
+	@inline function trand() # thread-local rand()
+	    @inbounds rng = TRNG[Threads.threadid()]
+	    rand(rng)
+	end
+	
+	@inline function trand(::Type{T}) where T # thread-local rand()
+	    @inbounds rng = TRNG[Threads.threadid()]
+	    rand(rng, T)
+	end
 end
 
 # ╔═╡ 0866add2-9b95-45e7-8081-c01cd2a66911
 md"""# Chapter 1: Overview"""
 
 # ╔═╡ 611d5eae-4b09-11ec-27bf-ef4a1ecdcc41
-md"Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.github.io/books/RayTracingInOneWeekend.html) and [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl)"
+md"""Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.github.io/books/RayTracingInOneWeekend.html) and [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl)
+
+Optimized with the help of many fellow Julia enthusiasts... please see [discussion](https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c). (On my PC, this code runs ~6% faster than the equivalent C++ code!)"""
 
 # ╔═╡ 97bb4432-ed41-423b-b4d9-bafc519de641
 md"# Chapter 2 - Manipulating images"
@@ -51,14 +61,16 @@ end
 
 # ╔═╡ 8aeb7373-6bb0-4544-8655-fa941561688c
 # The "Hello World" of graphics
-function gradient(nx::Int, ny::Int)
-	img = zeros(RGB{Float32}, ny, nx)
-	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
-		x = j; y = (ny-i);
-		r = x/nx
-		g = y/ny
-		b = 0.2
-		img[i,j] = RGB{Float32}(r,g,b)
+@fastmath function gradient(nx::Int, ny::Int)
+	img = zeros(RGB, ny, nx)
+	@inbounds @simd for j in 1:nx
+		for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
+			x = j; y = (ny-i);
+			r = x/nx
+			g = y/ny
+			b = 0.2
+			img[i,j] = RGB(r,g,b)
+		end
 	end
 	img
 end
@@ -75,6 +87,7 @@ md"""Unlike the C++ implementation:
 md"# Chapter 3: Linear Algebra"
 
 # ╔═╡ f8007c75-9487-414a-9592-138a696c2957
+# Examples follow:
 # Dot product (\cdot) is defined by LinearAlgebra...
 [1; 1] ⋅ [2; 3]
 
@@ -82,56 +95,86 @@ md"# Chapter 3: Linear Algebra"
 # Cross product (\times)
 [0;1;0] × [0;0;1]
 
+# ╔═╡ 71cee0d1-ff0a-4234-b393-8f20834f6415
+# Adapted from @Christ_Foster's: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c/72958/40
+begin
+	const Vec3{T<:AbstractFloat} = SVector{3, T}
+	@inline @inbounds function Base.getproperty(v::SVector{3}, name::Symbol)
+	    name === :x || name === :r ? getfield(v, :data)[1] :
+	    name === :y || name === :g ? getfield(v, :data)[2] :
+	    name === :z || name === :b ? getfield(v, :data)[3] : getfield(v, name)
+	end
+	
+	@inline @inbounds function Base.getproperty(v::SVector{2}, name::Symbol)
+	    name === :x || name === :r ? getfield(v, :data)[1] :
+	    name === :y || name === :g ? getfield(v, :data)[2] : getfield(v, name)
+	end
+end
+
+# ╔═╡ 3eb50f44-9091-45e8-a7e1-92d25b4b2090
+begin
+	Option{T} = Union{Missing, T}
+	
+	@inline squared_length(v::Vec3) = v ⋅ v
+	@inline near_zero(v::Vec3) = squared_length(v) < 1e-5
+end
+
 # ╔═╡ 78f209df-d176-4711-80fc-a8054771f105
-t_col = @SVector[0.4f0, 0.5f0, 0.1f0] # Float32 test color
+t_col = SA[0.4, 0.5, 0.1] # test color. See StaticArrays.jl
 
 # ╔═╡ e88de775-6904-4182-8209-06db22758470
-t_col[1] # first, i.e. red, component
+t_col.r # first, i.e. red, component
 
 # ╔═╡ 5fd1ec87-3616-448a-ab4d-fede804b26d5
 squared_length(t_col)
 
 # ╔═╡ a0893bf4-9607-4853-8162-9f34d3337060
-rgb(v::SVector{3,Float32}) = RGB(v[1], v[2], v[3]) # IIRC RGB(v...) was much slower...
+@inline rgb(v::Vec3) = RGB(v...)
 
 # ╔═╡ cfbcb883-d12e-4ad3-a084-064749bddcdb
 rgb(t_col)
 
 # ╔═╡ 6348c03d-e8ec-4dbb-9f8a-8e4a48bb1cb3
-rgb_gamma2(v::SVector{3,Float32}) = RGB(sqrt.(v)...) # claforte: try to expand?
+@inline rgb_gamma2(v::Vec3) = RGB(sqrt.(v)...)
 
 # ╔═╡ dbc8fc2d-39c2-4ec9-b82d-7c6a8b12dde7
 rgb_gamma2(t_col)
 
 # ╔═╡ 53832af1-a9be-4e02-8b71-a70dae63c233
-struct Ray
-	origin::SVector{3,Float32}
-	dir::SVector{3,Float32} # direction (unit vector)
+struct Ray{T}
+	origin::Vec3{T} # Point 
+	dir::Vec3{T} # Vec3 # direction (unit vector)
 end
 
 # ╔═╡ 81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
 # equivalent to C++'s ray.at()
 #"3D Point of ray `r` evaluated at parameter t"
-point(r::Ray, t::Float32)::SVector{3,Float32} = r.origin .+ t .* r.dir
+@inline point(r::Ray{T}, t::T) where T <: AbstractFloat = r.origin .+ t .* r.dir
 
 # ╔═╡ 772674b0-5c40-4457-9526-5b4e81cca711
 md"""# Random vectors
 C++'s section 8.1"""
 
+# ╔═╡ cdf96967-6790-4bd5-8890-40de9365a05a
+Threads.nthreads()
+
 # ╔═╡ 709861a3-202a-4bff-a46d-b46c6e14b334
 # equiv to random_double()
-random_between(min=0.0f0, max=1.0f0) = rand(Float32)*(max-min) + min
+@inline random_between(min::T=0, max::T=1) where T = trand(T)*(max-min) + min
 
 # ╔═╡ 135000d6-a675-4d8b-9385-50853bf9a169
-random_vec3(min::Float32, max::Float32) = @SVector[random_between(min,max) for i∈1:3]
+@inline random_vec3(min::T, max::T) where T = 
+	@inbounds @SVector[random_between(min, max) for i ∈ 1:3]
 
 # ╔═╡ 7d1146d7-74da-42e6-92c2-1312ed03f70d
-random_vec2(min::Float32, max::Float32) = @SVector[random_between(min,max) for i∈1:2]
+@inline random_vec2(min::T, max::T) where T = 
+	@inbounds @SVector[random_between(min, max) for i ∈ 1:2]
 
 # ╔═╡ 46a4aa4b-82c1-4941-b36d-dc8c977af2bc
-function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
+# equiv to random_in_unit_sphere()
+@inline function random_vec3_in_sphere(::Type{T}) where T
 	while true
-		p = random_vec3(-1f0, 1f0)
+		p = random_vec3(T(-1), T(1))
 		if p⋅p <= 1
 			return p
 		end
@@ -139,42 +182,38 @@ function random_vec3_in_sphere() # equiv to random_in_unit_sphere()
 end
 
 # ╔═╡ 203a9b25-742a-4d8b-adee-862ce4c67670
-squared_length(random_vec3_in_sphere())
+random_vec3_in_sphere(Float64)
 
 # ╔═╡ 2e98c6bd-0289-4105-ad25-24414ecf2750
 #"Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
-random_vec3_on_sphere() = normalize(random_vec3_in_sphere())
+@inline random_vec3_on_sphere(::Type{T}) where T = normalize(random_vec3_in_sphere(T))
+
+# ╔═╡ b5407efd-8071-43e7-b9f4-de1bd9de7311
+random_vec3_on_sphere(Float32)
 
 # ╔═╡ c0c23cb3-6a57-487d-943a-af4330a94ffe
-function random_vec2_in_disk() # equiv to random_in_unit_disk()
+# equiv to random_in_unit_disk()
+@inline function random_vec2_in_disk(::Type{T}) where T 
 	while true
-		p = random_vec2(-1f0, 1f0)
+		p = random_vec2(T(-1), T(1))
 		if p⋅p <= 1
 			return p
 		end
 	end
 end
 
+# ╔═╡ 3851fa56-2c73-45eb-9089-65eec0237f14
+random_vec2_in_disk(Float64)
+
 # ╔═╡ 678214c5-de81-489f-b002-c343d48071c9
 md"# Chapter 4: Rays, simple camera, and background"
 
 # ╔═╡ cbb6418c-79e9-4359-80a6-40a8fa40679e
-function skycolor(ray::Ray)
-	# NOTE: unlike in the C++ implem., we assume the ray direction is pre-normalized.
-	white = @SVector[1.0f0,1.0f0,1.0f0]
-	skyblue = @SVector[0.5f0,0.7f0,1.0f0]
-	t = 0.5f0(ray.dir[2] + 1.0f0)
-    (1.0f0-t)*white + t*skyblue
-end
-
-# ╔═╡ 14be6068-6a15-4fad-ac0a-f156da71f103
-rgb(@SVector[0.5f0, 0.7f0, 1.0f0]), rgb(@SVector[1.0f0, 1.0f0, 1.0f0])
-
-# ╔═╡ 64ef0313-2d2b-49d5-a1a1-3b04426a82f8
-begin
-	_origin = @SVector[0.0f0,0.0f0,0.0f0]
-	_v3_minusY = @SVector[0.0f0,-1.0f0,0.0f0]
-	_t_ray1 = Ray(_origin, _v3_minusY)
+@inline function skycolor(ray::Ray{T}) where T
+	white = SA[1.0, 1.0, 1.0]
+	skyblue = SA[0.5, 0.7, 1.0]
+	t = T(0.5)*(ray.dir.y + one(T))
+    (one(T)-t)*white + t*skyblue
 end
 
 # ╔═╡ 971777a6-f269-4344-8dba-7a55118396e5
@@ -183,35 +222,41 @@ end
 # 	Args:
 # 		scene: a function that takes a ray, returns the color of any object it hit
 # """
-function main(nx::Int, ny::Int, scene)
-	lower_left_corner = @SVector[-2,-1,-1]
-	horizontal = @SVector[4,0,0]
-	vertical = @SVector[0f0,2f0,0f0]
-	origin = @SVector[0,0,0]
+function main(nx::Int, ny::Int, scene, ::Type{T}) where T
+	lower_left_corner = SA[-2,-1,-1]
+	horizontal = SA[4,0,0]
+	vertical = SA[T(0),T(2),T(0)]
+	origin = SA[T(0),T(0),T(0)]
 	
-	img = zeros(RGB{Float32}, ny, nx)
-	for i in 1:ny, j in 1:nx # Julia is column-major, i.e. iterate 1 column at a time
-		u = j/nx
-		v = (ny-i)/ny # Y-up!
-		ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
-		#r = x/nx
-		#g = y/ny
-		#b = 0.2
-		img[i,j] = rgb(scene(ray))
+	img = zeros(RGB{T}, ny, nx)
+	Threads.@threads for j in 1:nx
+		# Julia is column-major, i.e. iterate 1 column at a time
+		@inbounds for i in 1:ny 
+			u = T(j/nx)
+			v = T((ny-i)/ny) # Y-up!
+			ray = Ray(origin, normalize(lower_left_corner + u*horizontal +
+										v*vertical))
+			#r = x/nx
+			#g = y/ny
+			#b = 0.2
+			img[i,j] = rgb(scene(ray))
+		end
 	end
 	img
 end
 
+
 # ╔═╡ 655ffa6c-f1e9-4149-8f1d-51145c5a51e4
-main(200,100, skycolor)
+main(200, 100, skycolor, Float32)
 
 # ╔═╡ 9075f8ed-f319-486d-94b2-486806aba3fd
 md"# Chapter 5: Add a sphere"
 
 # ╔═╡ c00e2004-2002-4dd2-98ed-f898ef2c14f1
-function hit_sphere1(center::SVector{3,Float32}, radius::Float32, r::Ray)
+@inline @fastmath function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
 	oc = r.origin - center
-	a = r.dir ⋅ r.dir
+	#a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+	a = 1
 	b = 2oc ⋅ r.dir
 	c = (oc ⋅ oc) - radius*radius
 	discriminant = b*b - 4a*c
@@ -219,27 +264,28 @@ function hit_sphere1(center::SVector{3,Float32}, radius::Float32, r::Ray)
 end
 
 # ╔═╡ b7399fb8-6205-41ea-9c70-eb62daedcefb
-function sphere_scene1(r::Ray)
+@inline function sphere_scene1(r::Ray{T}) where T
 	# sphere of radius 0.5 centered at z=-1
-	if hit_sphere1(@SVector[0f0,0f0,-1f0], 0.5f0, r) 
-		return @SVector[1f0,0f0,0f0] # red
+	if hit_sphere1(SA[T(0), T(0), T(-1)], T(0.5), r) 
+		return SA[T(1),T(0),T(0)] # red
 	else
 		skycolor(r)
 	end
 end
 
 # ╔═╡ 1d04159d-87bd-4cf8-a73c-817f20ca1026
-main(200,100,sphere_scene1)
+main(200, 100, sphere_scene1, Float64) 
 
 # ╔═╡ fed81f09-e4a0-433f-99e8-261096114b7b
 md"# Chapter 6: Surface normals and multiple objects"
 
 # ╔═╡ 24e8740a-8e44-4206-b2b6-c4a55002dad8
-function hit_sphere2(center::SVector{3,Float32}, radius::Float32, r::Ray)
+@inline function hit_sphere2(center::Vec3{T}, radius::T, r::Ray{T}) where T
 	oc = r.origin - center
-	a = r.dir ⋅ r.dir
+	#a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+	a = 1
 	b = 2oc ⋅ r.dir
-	c = (oc ⋅ oc) - radius*radius
+	c = (oc ⋅ oc) - radius^2
 	discriminant = b*b - 4a*c
 	if discriminant < 0
 		return -1
@@ -249,60 +295,50 @@ function hit_sphere2(center::SVector{3,Float32}, radius::Float32, r::Ray)
 end
 
 # ╔═╡ 359832af-7598-4c45-8033-c28cb0d86772
-function sphere_scene2(r::Ray)
-	sphere_center = SVector{3,Float32}(0f0,0f0,-1f0)
-	t = hit_sphere2(sphere_center, 0.5f0, r) # sphere of radius 0.5 centered at z=-1
-	if t > 0f0
+@inline function sphere_scene2(r::Ray{T}) where T
+	sphere_center = SA[T(0),T(0),T(-1)]
+	t = hit_sphere2(sphere_center, T(0.5), r) # sphere of radius 0.5 centered at z=-1
+	if t > T(0)
 		n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
-		return 0.5f0n⃗ + SVector{3,Float32}(0.5f0,0.5f0,0.5f0) # remap normal to rgb
+		return T(0.5)*n⃗ + SA[T(0.5),T(0.5),T(0.5)] # remap normal to rgb
 	else
 		skycolor(r)
 	end
 end
 
 # ╔═╡ ed6ab8be-587c-4cb6-8172-618c74d3f9cc
-main(200,100,sphere_scene2)
+main(200,100,sphere_scene2, Float32)
 
 # ╔═╡ a65c68c9-e489-465a-9687-93ae9da14a5e
-"An object that can be hit by Ray"
+#"An object that can be hit by Ray"
 abstract type Hittable end
 
 # ╔═╡ 2c4b4453-1a46-4889-9a14-16b18cc8c240
-"""Materials tell us how rays interact with a surface"""
-abstract type Material end
-
-# ╔═╡ 98c43f3f-4bfc-49db-806a-850b7d75b5a4
-begin
-	struct NoMaterial <: Material end
-	
-	const _no_material = NoMaterial()
-	const _y_up = @SVector[0f0,1f0,0f0]
-end
+#"""Materials tell us how rays interact with a surface"""
+abstract type Material{T <: AbstractFloat} end
 
 # ╔═╡ 3b570d37-f407-41d8-b8a0-a0af4d85b14d
-"Record a hit between a ray and an object's surface"
-mutable struct HitRecord
-	t::Float32 # vector from the ray's origin to the intersection with a surface. 
+#"Record a hit between a ray and an object's surface"
+struct HitRecord{T <: AbstractFloat}
+	t::T # distance from the ray's origin to the intersection with a surface. 
 	
-	# If t==Inf32, there was no hit, and all following values are undefined!
-	#
-	p::SVector{3,Float32} # point of intersection between an object's surface and ray
-	n⃗::SVector{3,Float32} # local normal (see diagram below)
+	p::Vec3{T} # point of the intersection between an object's surface and a ray
+	n⃗::Vec3{T} # surface's outward normal vector, points towards outside of object?
 	
 	# If true, our ray hit from outside to the front of the surface. 
 	# If false, the ray hit from within.
 	front_face::Bool
-	mat::Material
+	
+	mat::Material{T}
 
-	HitRecord() = new(Inf32) # no hit!
-	HitRecord(t,p,n⃗,front_face,mat) = new(t,p,n⃗,front_face,mat)
+	@inline HitRecord(t::T,p,n⃗,front_face,mat) where T = new{T}(t,p,n⃗,front_face,mat)
 end
 
 # ╔═╡ 138bb5b6-0f45-4f13-8339-5110eb7cd1ff
-struct Sphere <: Hittable
-	center::SVector{3,Float32}
-	radius::Float32
-	mat::Material
+struct Sphere{T <: AbstractFloat} <: Hittable
+	center::Vec3{T}
+	radius::T
+	mat::Material{T}
 end
 
 # ╔═╡ 6b36d245-bf01-45a7-b119-8315226dd4a3
@@ -312,67 +348,69 @@ style="width:24em"> """)
 
 # ╔═╡ 4a396b3f-f920-4ec2-91f6-7d61fe2b9699
 #"""Equivalent to `hit_record.set_face_normal()`"""
-function ray_to_HitRecord(t, p, outward_n⃗, r_dir::SVector{3,Float32}, mat::Material)
+@inline @fastmath function ray_to_HitRecord(t::T, p, outward_n⃗, r_dir::Vec3{T}, mat::Material{T})::Union{HitRecord,Nothing} where T
 	front_face = r_dir ⋅ outward_n⃗ < 0
 	n⃗ = front_face ? outward_n⃗ : -outward_n⃗
-	rec = HitRecord(t,p,n⃗,front_face,mat)
+	HitRecord(t,p,n⃗,front_face,mat)
 end
 
 # ╔═╡ 427f247c-055c-459e-9862-26e9f6f3e24f
-struct Scatter
-	r::Ray
-	attenuation::SVector{3,Float32}
+struct Scatter{T<: AbstractFloat}
+	r::Ray{T}
+	attenuation::Vec3{T}
 	
 	# claforte: TODO: rename to "absorbed?", i.e. not reflected/refracted?
 	reflected::Bool # whether the scattered ray was reflected, or fully absorbed
-	Scatter(r,a,reflected=true) = new(r,a,reflected)
+	@inline Scatter(r::Ray{T},a::Vec3{T},reflected=true) where T = 
+		new{T}(r,a,reflected)
 end
 
 # ╔═╡ 88e51c27-0f28-4dcc-b9e9-ac44eeb876f5
 #"Diffuse material"
-mutable struct Lambertian<:Material
-	albedo::SVector{3,Float32}
+struct Lambertian{T} <: Material{T}
+	albedo::Vec3{T}
 end
 
 # ╔═╡ 7c4a67b2-8208-4cd4-b1ea-16f6f50adfe8
 # """Compute reflection vector for v (pointing to surface) and normal n⃗.
 
 # 	See [diagram](https://raytracing.github.io/books/RayTracingInOneWeekend.html#metal/mirroredlightreflection)"""
-reflect(v::SVector{3,Float32}, n⃗::SVector{3,Float32}) = v - (2v⋅n⃗)*n⃗
+@inline @fastmath reflect(v::Vec3{T}, n⃗::Vec3{T}) where T = v - (2v⋅n⃗)*n⃗
 
-# ╔═╡ ca649864-5a6d-4ca7-896e-e80e8a48443e
-reflect(@SVector[0.6f0,-0.8f0,0f0], @SVector[0f0,1f0,0f0]) # diagram's example
+# ╔═╡ 87de4e8e-f7a2-4b47-991c-9b2988782ef4
+# diagram's example
+@assert reflect(SA[0.6,-0.8,0.0], SA[0.0,1.0,0.0]) == SA[0.6,0.8,0.0]
 
 # ╔═╡ 485f9c5b-4c5d-453c-b190-e84ae0cd1a21
 # """Create a scattered ray emitted by `mat` from incident Ray `r`. 
-
+#
 # 	Args:
 # 		rec: the HitRecord of the surface from which to scatter the ray.
-
+#
 # 	Return missing if it's fully absorbed. """
-function scatter(mat::Lambertian, r::Ray, rec::HitRecord)::Scatter
-	scatter_dir = rec.n⃗ + random_vec3_on_sphere()
+@inline @fastmath function scatter(mat::Lambertian{T}, r::Ray{T}, 
+								   rec::HitRecord{T})::Scatter{T} where T
+	scatter_dir = rec.n⃗ + random_vec3_on_sphere(T)
 	if near_zero(scatter_dir) # Catch degenerate scatter direction
 		scatter_dir = rec.n⃗ 
 	else
 		scatter_dir = normalize(scatter_dir)
 	end
-	scattered_r = Ray(rec.p, scatter_dir)
+	scattered_r = Ray{T}(rec.p, scatter_dir)
 	attenuation = mat.albedo
 	return Scatter(scattered_r, attenuation)
 end
 
-# ╔═╡ c63d10c2-dd43-4836-83ee-61b782545a02
-const _no_hit = HitRecord() # will be reused 
-
 # ╔═╡ 78efebc5-53fd-417d-bd9e-667fd504e3fd
-function hit(s::Sphere, r::Ray, tmin::Float32, tmax::Float32)
+@inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, 
+							   tmax::T)::Union{HitRecord,Nothing} where T
     oc = r.origin - s.center
-    a = 1 #r.dir ⋅ r.dir # normalized vector - always 1
-    half_b = oc ⋅ r.dir
+    #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+	a = 1
+	half_b = oc ⋅ r.dir
     c = oc⋅oc - s.radius^2
     discriminant = half_b^2 - a*c
-	if discriminant < 0 return _no_hit end
+	if discriminant < 0 return nothing end # no hit!
 	sqrtd = √discriminant
 	
 	# Find the nearest root that lies in the acceptable range
@@ -380,10 +418,10 @@ function hit(s::Sphere, r::Ray, tmin::Float32, tmax::Float32)
 	if root < tmin || tmax < root
 		root = (-half_b + sqrtd) / a
 		if root < tmin || tmax < root
-			return _no_hit
+			return nothing # no hit!
 		end
 	end
-		
+	
 	t = root
 	p = point(r, t)
 	n⃗ = (p - s.center) / s.radius
@@ -391,41 +429,43 @@ function hit(s::Sphere, r::Ray, tmin::Float32, tmax::Float32)
 end
 
 # ╔═╡ 05e57afd-6eb9-42c5-9666-7be3771fa6b8
-struct HittableList <: Hittable
-    list::Vector{Hittable}
-end
+const HittableList = Vector{Hittable}
 
 # ╔═╡ 08e18ae5-9927-485e-9644-552f03e06f27
-#"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
-function hit(hittables::HittableList, r::Ray, tmin::Float32, tmax::Float32)
+#"Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"
+@inline function hit(hittables::HittableList, r::Ray{T}, tmin::T,
+					 tmax::T)::Union{HitRecord,Nothing} where T
     closest = tmax # closest t so far
-    rec = _no_hit
-    for h in hittables.list
-        temprec = hit(h, r, tmin, closest)
-        if temprec !== _no_hit
-            rec = temprec
-            closest = rec.t # i.e. ignore any further hit > this one's.
+    best_rec::Union{HitRecord,Nothing} = nothing # by default, no hit
+    @inbounds for i in eachindex(hittables)
+		h = hittables[i]
+        rec = hit(h, r, tmin, closest)
+        if rec !== nothing
+            best_rec = rec
+            closest = best_rec.t # i.e. ignore any further hit > this one's.
         end
     end
-    rec
+    best_rec
 end
 
 # ╔═╡ 737e2f87-82f5-45b6-a76c-4f560c29f5b9
-color_vec3_in_rgb(v::SVector{3,Float32}) = 0.5normalize(v) + @SVector[0.5f,0.5f,0.5f]
+@inline color_vec3_in_rgb(v::Vec3{T}) where T = 0.5normalize(v) + SA{T}[0.5,0.5,0.5]
 
 # ╔═╡ 0bf88264-d4c5-4d5a-babe-d2433e46024d
 md"# Metal material"
 
 # ╔═╡ 555bea1d-5178-48dd-87e6-4e2a2471a5dd
-mutable struct Metal<:Material
-	albedo::SVector{3,Float32}
-	fuzz::Float32 # how big the sphere used to generate fuzzy reflection rays. 0=none
-	Metal(a,f=0.0) = new(a,f)
+struct Metal{T} <: Material{T}
+	albedo::Vec3{T}
+	fuzz::T # how big the sphere used to generate fuzzy reflection rays. 0=none
+	@inline Metal(a::Vec3{T}, f::T=0.0) where T = new{T}(a,f)
 end
 
 # ╔═╡ c299ca47-46c4-42da-9f8b-ae3abbeb6e51
-function scatter(mat::Metal, r_in::Ray, rec::HitRecord)::Scatter
-	reflected = normalize(reflect(r_in.dir, rec.n⃗) + mat.fuzz*random_vec3_on_sphere())
+@inline @fastmath function scatter(mat::Metal{T}, r_in::Ray{T},
+								   rec::HitRecord)::Scatter{T} where T
+	reflected = normalize(reflect(r_in.dir, rec.n⃗) + 
+						  mat.fuzz*random_vec3_on_sphere(T))
 	Scatter(Ray(rec.p, reflected), mat.albedo)
 end
 
@@ -434,16 +474,15 @@ md"# Scenes"
 
 # ╔═╡ 70530f8e-1b29-4588-927f-d38d5d12d5c9
 #"Scene with 2 Lambertian spheres"
-function scene_2_spheres()::HittableList
+function scene_2_spheres(; elem_type::Type{T}) where T
 	spheres = Sphere[]
 	
 	# small center sphere
-	push!(spheres, Sphere(@SVector[0f0,0f0,-1f0], 0.5,
-						  Lambertian(@SVector[0.7f0,0.3f0,0.3f0])))
+	push!(spheres, Sphere((SA{T}[0,0,-1]), T(0.5), Lambertian(SA{T}[0.7,0.3,0.3])))
 	
-	# ground sphere (planet?)
-	push!(spheres, Sphere(@SVector[0f0,-100.5f0,-1f0], 100,
-						  Lambertian(@SVector[0.8f0,0.8f0,0.0f0])))
+	# ground sphere
+	push!(spheres, Sphere((SA{T}[0,-100.5,-1]), T(100), 
+						   Lambertian(SA{T}[0.8,0.8,0.0])))
 	HittableList(spheres)
 end
 
@@ -451,14 +490,14 @@ end
 #"""Scene with 2 Lambertian, 2 Metal spheres.
 #
 #	See https://raytracing.github.io/images/img-1.11-metal-shiny.png"""
-function scene_4_spheres()::HittableList
-	scene = scene_2_spheres()
+function scene_4_spheres(; elem_type::Type{T}) where T
+	scene = scene_2_spheres(; elem_type=elem_type)
 
 	# left and right Metal spheres
-	push!(scene.list, Sphere(@SVector[-1f0,0f0,-1f0], 0.5f0,
-							 Metal(@SVector[0.8f0,0.8f0,0.8f0], 0.3f0))) 
-	push!(scene.list, Sphere(@SVector[1f0,0f0,-1f0], 0.5f0, 
-							 Metal(@SVector[0.8f0,0.6f0,0.2f0], 0.8f0)))
+	push!(scene, Sphere((SA{T}[-1,0,-1]), T(0.5), 
+		Metal((SA{T}[0.8,0.8,0.8]), T(0.3)))) 
+	push!(scene, Sphere((SA{T}[ 1,0,-1]), T(0.5), 
+		Metal((SA{T}[0.8,0.6,0.2]), T(0.8))))
 	return scene
 end
 
@@ -468,15 +507,15 @@ md"""# Camera
 Adapted from C++'s sections 7.2, 11.1 """
 
 # ╔═╡ a0e5a1f3-244f-427b-a335-7e233af1d9d8
-mutable struct Camera
-	origin::SVector{3,Float32}
-	lower_left_corner::SVector{3,Float32}
-	horizontal::SVector{3,Float32}
-	vertical::SVector{3,Float32}
-	u::SVector{3,Float32}
-	v::SVector{3,Float32}
-	w::SVector{3,Float32}
-	lens_radius::Float32
+struct Camera{T <: AbstractFloat}
+	origin::Vec3{T}
+	lower_left_corner::Vec3{T}
+	horizontal::Vec3{T}
+	vertical::Vec3{T}
+	u::Vec3{T}
+	v::Vec3{T}
+	w::Vec3{T}
+	lens_radius::T
 end
 
 # ╔═╡ 5d00f26b-35f2-4071-8e04-227ffc25f184
@@ -486,11 +525,12 @@ end
 # 		aspect_ratio: horizontal/vertical ratio of pixels
 #       aperture: if 0 - no depth-of-field
 # """
-function default_camera(lookfrom::SVector{3,Float32}=@SVector[0f0,0f0,0f0], 
-			lookat::SVector{3,Float32}=@SVector[0f0,0f0,-1f0], 
-			vup::SVector{3,Float32}=@SVector[0f0,1f0,0f0], vfov=90.0f0, aspect_ratio=16.0f0/9.0f0,
-						aperture=0.0f0, focus_dist=1.0f0)
-	viewport_height = 2.0f0 * tand(vfov/2f0)
+function default_camera(lookfrom::Vec3{T}=(SA{T}[0,0,0]), 
+						lookat::Vec3{T}=(SA{T}[0,0,-1]), 
+						vup::Vec3{T}=(SA{T}[0,1,0]), 
+						vfov::T=T(90), aspect_ratio::T=T(16/9),
+						aperture::T=T(0), focus_dist::T=T(1)) where T
+	viewport_height = T(2) * tand(vfov/T(2))
 	viewport_width = aspect_ratio * viewport_height
 	
 	w = normalize(lookfrom - lookat)
@@ -500,29 +540,43 @@ function default_camera(lookfrom::SVector{3,Float32}=@SVector[0f0,0f0,0f0],
 	origin = lookfrom
 	horizontal = focus_dist * viewport_width * u
 	vertical = focus_dist * viewport_height * v
-	lower_left_corner = origin - horizontal/2f0 - vertical/2f0 - focus_dist*w
-	lens_radius = aperture/2f0
-	Camera(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius)
+	lower_left_corner = origin - horizontal/T(2) - vertical/T(2) - focus_dist*w
+	lens_radius = aperture/T(2)
+	Camera{T}(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius)
 end
 
+# ╔═╡ eda07d5f-ab0a-41ba-a411-577be0d7e56e
+default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist;
+			   elem_type::Type{T}) where T =
+	default_camera(Vec3{T}(lookfrom), Vec3{T}(lookat), Vec3{T}(vup), 
+		T(vfov), T(aspect_ratio), T(aperture), T(focus_dist)
+	)
+
 # ╔═╡ c1aef1be-79d4-4417-be36-ae8416465986
-default_camera()
+default_camera(SA[0f0,0f0,0f0]) # Float32 camera
 
 # ╔═╡ 94081092-afc6-4359-bd2c-15e8407bf70e
-function get_ray(c::Camera, s::Float32, t::Float32)
-	rd = SVector{2,Float32}(c.lens_radius * random_vec2_in_disk())
-	offset = c.u * rd[1] + c.v * rd[2] #offset = c.u * rd.x + c.v * rd.y
+@inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
+	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
+	offset = c.u * rd.x + c.v * rd.y #offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
 									 t*c.vertical - c.origin - offset))
 end
 
 # ╔═╡ 813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
-get_ray(default_camera(), 0.0f0, 0.0f0)
+# example with Float32:
+get_ray(default_camera(SA[0f0,0f0,0f0]), 0.0f0, 0.0f0)
 
 # ╔═╡ 891ce2c8-f8b2-472b-a8d9-389dafddcf22
 md"# Render
 
 (equivalent to final `main`)"
+
+# ╔═╡ 90dbe8e5-139d-404a-bfed-177776dc5401
+ELEM_TYPE = Float64 # default Element type
+
+# ╔═╡ e4e74dd4-7f0d-4af7-9cf1-a615a0304293
+t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 
 # ╔═╡ 5f1bae02-d425-4a73-8668-d6383faba79d
 md"""# Dielectrics
@@ -544,60 +598,57 @@ Split the parts of the ray into `R′=R′⊥+R′∥` (perpendicular and parall
 # 	Args:
 # 		refraction_ratio: incident refraction index divided by refraction index of 
 # 			hit surface. i.e. η/η′ in the figure above"""
-function refract(dir::SVector{3,Float32}, n⃗::SVector{3,Float32}, 
-				 refraction_ratio::Float32)
-	cosθ = min(-dir ⋅ n⃗, 1)
+@inline @fastmath function refract(dir::Vec3{T}, n⃗::Vec3{T}, 
+								   refraction_ratio::T) where T
+	cosθ = min(-dir ⋅ n⃗, one(T))
 	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
-	r_out_parallel = -√(abs(1-squared_length(r_out_perp))) * n⃗
+	r_out_parallel = -√(abs(one(T)-squared_length(r_out_perp))) * n⃗
 	normalize(r_out_perp + r_out_parallel)
 end
 
 # ╔═╡ bbfd4db5-3650-4f27-9777-2ff981c3d28b
 begin # optional tests
 	# unchanged angle
-	@assert refract(SVector{3,Float32}(0.6,-0.8,0), 
-		SVector{3,Float32}(0,1,0), 1.0f0) == SVector{3,Float32}(0.6,-0.8,0) 
+	@assert refract((@SVector[0.6,-0.8,0]), (@SVector[0.0,1.0,0.0]), 1.0) == 
+				@SVector[0.6,-0.8,0.0] 
 
 	# wider angle
-	t_refract_widerθ = refract(SVector{3,Float32}(0.6,-0.8,0), 
-		SVector{3,Float32}(0,1,0), 2.0f0)
-	@assert isapprox(t_refract_widerθ, 
-		SVector{3,Float32}(0.87519, -0.483779, 0.0); atol=1e-3)
+	t_refract_widerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 2.0)
+	@assert isapprox(t_refract_widerθ, @SVector[0.87519,-0.483779,0.0]; atol=1e-3)
 
 	# narrower angle
-	t_refract_narrowerθ = refract(SVector{3,Float32}(0.6,-0.8,0), 
-		SVector{3,Float32}(0,1,0), 0.5f0)
-	@assert isapprox(t_refract_narrowerθ, 
-		SVector{3,Float32}(0.3, -0.953939, 0.0); atol=1e-3)
+	t_refract_narrowerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 0.5)
+	@assert isapprox(t_refract_narrowerθ, @SVector[0.3,-0.953939,0.0]; atol=1e-3)
 end
 
 # ╔═╡ f5c4e502-048c-4fcd-879f-eaeb4430c012
-mutable struct Dielectric <: Material
-	ir::Float32 # index of refraction, i.e. η.
+struct Dielectric{T} <: Material{T}
+	ir::T # index of refraction, i.e. η.
 end
 
 # ╔═╡ 167cc207-7be6-4624-8425-2df81b3f6c3b
-function reflectance(cosθ::Float32, refraction_ratio::Float32)
+@inline @fastmath function reflectance(cosθ, refraction_ratio)
 	# Use Schlick's approximation for reflectance.
 	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
-	r0 = (1f0-refraction_ratio) / (1f0+refraction_ratio)
+	r0 = (1-refraction_ratio) / (1+refraction_ratio)
 	r0 = r0^2
-	r0 + (1f0-r0)*((1f0-cosθ)^5)
+	r0 + (1-r0)*((1-cosθ)^5)
 end
 
 # ╔═╡ ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
-function scatter(mat::Dielectric, r_in::Ray, rec::HitRecord)
-	attenuation = @SVector[1f0,1f0,1f0]
-	refraction_ratio = rec.front_face ? (1.0f0/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
-	cosθ = min(-r_in.dir⋅rec.n⃗, 1.0f0)
-	sinθ = √(1.0f0 - cosθ^2)
-	cannot_refract = refraction_ratio * sinθ > 1.0
-	if cannot_refract || reflectance(cosθ, refraction_ratio) > rand()
+@inline @fastmath function scatter(mat::Dielectric{T}, r_in::Ray{T},
+								   rec::HitRecord{T}) where T
+	attenuation = SA{T}[1,1,1]
+	refraction_ratio = rec.front_face ? (one(T)/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
+	cosθ = min(-r_in.dir⋅rec.n⃗, one(T))
+	sinθ = √(one(T) - cosθ^2)
+	cannot_refract = refraction_ratio * sinθ > one(T)
+	if cannot_refract || reflectance(cosθ, refraction_ratio) > trand(T)
 		dir = reflect(r_in.dir, rec.n⃗)
 	else
 		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
 	end
-	Scatter(Ray(rec.p, dir), attenuation) # TODO: rename reflected -> !absorbed?
+	Scatter(Ray{T}(rec.p, dir), attenuation) # TODO: rename reflected -> !absorbed?
 end
 
 # ╔═╡ f72214f9-03c4-4ba3-bb84-069256446b31
@@ -605,14 +656,16 @@ end
 
 # 	Args:
 # 		depth: how many more levels of recursive ray bounces can we still compute?"""
-function ray_color(r::Ray, world::HittableList, depth=4)
+@inline @fastmath function ray_color(r::Ray{T}, world::HittableList, 
+								     depth=16) where T
     if depth <= 0
-		return @SVector[0f0,0f0,0f0]
+		return SA{T}[0,0,0]
 	end
 		
-	rec = hit(world, r, 1f-4, Inf32)
-    if rec !== _no_hit
+	rec::Union{HitRecord,Nothing} = hit(world, r, T(1e-4), typemax(T))
+    if rec !== nothing
 		# For debugging, represent vectors as RGB:
+		# claforte TODO: adapt to latest code!
 		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
 		# return color_vec3_in_rgb(rec.n⃗) # show the normal in RGB
 		# return color_vec3_in_rgb(rec.p + rec.n⃗)
@@ -623,12 +676,13 @@ function ray_color(r::Ray, world::HittableList, depth=4)
 		if s.reflected
 			return s.attenuation .* ray_color(s.r, world, depth-1)
 		else
-			return @SVector[0f0,0f0,0f0]
+			return SA{T}[0,0,0]
 		end
     else
         skycolor(r)
     end
 end
+
 
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
 # """Render an image of `scene` using the specified camera, number of samples.
@@ -638,182 +692,176 @@ end
 # 		n_samples: number of samples per pixel, eq. to C++ samples_per_pixel
 #
 # 	Equivalent to C++'s `main` function."""
-function render(scene::HittableList, cam::Camera, image_width=400,
-				n_samples=1)
+function render(scene::HittableList, cam::Camera{T}, image_width=400,
+				n_samples=1) where T
 	# Image
-	aspect_ratio = 16.0f0/9.0f0 # TODO: use cam.aspect_ratio for consistency
+	aspect_ratio = T(16.0/9.0) # TODO: use cam.aspect_ratio for consistency
 	image_height = convert(Int64, floor(image_width / aspect_ratio))
 
 	# Render
-	img = zeros(RGB{Float32}, image_height, image_width)
-	# Compared to C++, Julia is:
-	# 1. column-major, i.e. iterate 1 column at a time, so invert i,j compared to C++
-	# 2. 1-based, so no need to subtract 1 from image_width, etc.
-	# 3. The array is Y-down, but `v` is Y-up 
-	for i in 1:image_height, j in 1:image_width
-		accum_color = @SVector[0f0,0f0,0f0]
-		for s in 1:n_samples
-			u = convert(Float32, j/image_width)
-			v = convert(Float32, (image_height-i)/image_height) # i=Y-down, v=Y-up!
-			if s != 1 # 1st sample is always centered, for 1-sample/pixel
-				# claforte: I think the C++ version had a bug, the rand offset was
-				# between [0,1] instead of centered at 0, e.g. [-0.5, 0.5].
-				u += convert(Float32, (rand()-0.5f0) / image_width)
-				v += convert(Float32 ,(rand()-0.5f0) / image_height)
+	img = zeros(RGB{T}, image_height, image_width)
+	f32_image_width = convert(Float32, image_width)
+	f32_image_height = convert(Float32, image_height)
+	
+	# Reset the random seeds, so we always get the same images...
+	# Makes comparing performance more accurate.
+	reseed!() 
+
+	Threads.@threads for i in 1:image_height
+		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
+			accum_color = SA{T}[0,0,0]
+			u = convert(T, j/image_width)
+			v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
+			
+			for s in 1:n_samples
+				if s == 1 # 1st sample is always centered
+					δu = δv = T(0)
+				else
+					# Supersampling antialiasing.
+					δu = trand(T) / f32_image_width
+					δv = trand(T) / f32_image_height
+				end
+				ray = get_ray(cam, u+δu, v+δv)
+				accum_color += ray_color(ray, scene)
 			end
-			ray = get_ray(cam, u, v)
-			accum_color += ray_color(ray, scene)
+			img[i,j] = rgb_gamma2(accum_color / n_samples)
 		end
-		img[i,j] = rgb_gamma2(accum_color / n_samples)
 	end
 	img
 end
 
+# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
+render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 1) # 1 sample
 
 # ╔═╡ aa38117f-45e8-4070-a412-958f0ce19aa5
-render(scene_2_spheres(), default_camera(), 96, 16)
-
-# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-render(scene_4_spheres(), default_camera(), 96, 16)
+render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 64)
 
 # ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
-render(scene_4_spheres(), default_camera(), 200, 256)
+render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 256)
 
 # ╔═╡ ddf5883c-036a-4a21-908d-bb7cec731f7f
 #"From C++: Image 15: Glass sphere that sometimes refracts"
-function scene_diel_spheres(left_radius=0.5f0)::HittableList # dielectric spheres
+# dielectric spheres
+@inline function scene_diel_spheres(left_radius=0.5; elem_type::Type{T}) where T
 	spheres = Sphere[]
 	
 	# small center sphere
-	push!(spheres, Sphere(SVector{3,Float32}(0f0,0f0,-1f0), 0.5f0, 
-						  Lambertian(SVector{3,Float32}(0.1f0,0.2f0,0.5f0))))
+	push!(spheres, Sphere((SA{T}[0,0,-1]), T(0.5), Lambertian(SA{T}[0.1,0.2,0.5])))
 	
 	# ground sphere (planet?)
-	push!(spheres, Sphere(SVector{3,Float32}(0f0,-100.5f0,-1f0), 100f0, 
-						  Lambertian(SVector{3,Float32}(0.8f0,0.8f0,0.0f0))))
+	push!(spheres, Sphere((SA{T}[0,-100.5,-1]), T(100), 
+		Lambertian(SA{T}[0.8,0.8,0.0])))
 	
-	# left and right spheres.
-	# Use a negative radius on the left sphere to create a "thin bubble" 
-	push!(spheres, Sphere(SVector{3,Float32}(-1f0,0f0,-1f0), left_radius, 
-						  Dielectric(1.5f0))) 
-	push!(spheres, Sphere(SVector{3,Float32}( 1f0,0f0,-1f0), 0.5f0, 
-						  Metal(SVector{3,Float32}(0.8f0,0.6f0,0.2f0), 0.0f0)))
+	# # left and right spheres.
+	# # Use a negative radius on the left sphere to create a "thin bubble" 
+	push!(spheres, Sphere((SA{T}[-1,0,-1]), T(left_radius), Dielectric(T(1.5)))) 
+	push!(spheres, Sphere((SA{T}[1,0,-1]), T(0.5), 
+		Metal((SA{T}[0.8,0.6,0.2]), T(0))))
 	HittableList(spheres)
 end
 
 # ╔═╡ a1564d79-3628-4121-99a9-d3674e16eb04
-render(scene_diel_spheres(), default_camera(), 96, 16)
-
-# ╔═╡ 330a8972-adbd-471b-ade1-15901a258cbb
-render(scene_diel_spheres(), default_camera(), 200, 64)
+render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_default_cam, 320, 64)
 
 # ╔═╡ 2e9672e3-f2b8-439e-b1f3-3cc60a459885
 # Hollow Glass sphere using a negative radius
-# claforte: getting a weird black halo in the glass sphere... might be due to my
-# "fix" for previous black spots, by moving the RecordHit point a bit away from 
-# the hit surface... 
-render(scene_diel_spheres(-0.5), default_camera(), 200, 64)
+render(scene_diel_spheres(; elem_type=ELEM_TYPE), 
+	default_camera((SA{ELEM_TYPE}[-2,2,1]), (SA{ELEM_TYPE}[0,0,-1]),
+		(SA{ELEM_TYPE}[0,1,0]), ELEM_TYPE(20)), 320, 128)
 
 # ╔═╡ 0587d381-b957-4c40-b6b7-e5e0fd46267b
 md"# Positioning camera"
 
 # ╔═╡ 7c75b0d8-578d-4ca9-8d74-935c1ac582b9
-function scene_blue_red_spheres()::HittableList # dielectric spheres
+function scene_blue_red_spheres(; elem_type::Type{T}) where T
 	spheres = Sphere[]
 	R = cos(pi/4)
-	push!(spheres, Sphere(@SVector[-R,0f0,-1f0], R, 
-						  Lambertian(@SVector[0f0,0f0,1f0]))) 
-	push!(spheres, Sphere(@SVector[R,0f0,-1f0], R, 
-						  Lambertian(@SVector[1f0,0f0,0f0]))) 
+	push!(spheres, Sphere((SA{T}[-R,0,-1]), R, Lambertian(SA{T}[0,0,1]))) 
+	push!(spheres, Sphere((SA{T}[ R,0,-1]), R, Lambertian(SA{T}[1,0,0]))) 
 	HittableList(spheres)
 end
 
 # ╔═╡ dcde1539-23af-4abf-96d3-6a903add3ea8
-render(scene_blue_red_spheres(), default_camera(), 96, 16)
-
-# ╔═╡ e7f5c672-0bd9-4cfe-8a47-17cd67aa01f4
-render(scene_diel_spheres(), default_camera(@SVector[-2f0,2f0,1f0], 
-	@SVector[0f0,0f0,-1f0], @SVector[0f0,1f0,0f0], 20.0f0), 200, 256)
+render(scene_blue_red_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 64)
 
 # ╔═╡ e3ef265c-1911-429d-84be-5d5174d55fa1
 md"# Spheres with depth-of-field"
 
-# ╔═╡ a7d95d91-6571-4696-bad3-2979296d5f84
-begin
-	t_lookfrom2 = @SVector[3.0f0,3.0f0,2.0f0]
-	t_lookat2 = @SVector[0.0f0,0.0f0,-1.0f0]
-	dist_to_focus2 = norm(t_lookfrom2-t_lookat2)
-	t_cam2 = default_camera(t_lookfrom2, t_lookat2, @SVector[0.0f0,1.0f0,0.0f0], 
-			20.0f0, 16.0f0/9.0f0, 2.0f0, dist_to_focus2)
-end
+# ╔═╡ f49ac345-c19c-4fe5-9dee-dbfeff3ff646
+t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, 
+	norm([3,3,2]-[0,0,-1]); elem_type=ELEM_TYPE)
 
-# ╔═╡ 5bc1a6eb-8867-48b4-b141-fc0636d36694
-render(scene_diel_spheres(), t_cam2, 200, 128)
+# ╔═╡ 90bb20e4-4afa-46aa-a7b7-5de446efa439
+render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 320, 128)
 
 # ╔═╡ 3c54cde0-6509-45e1-a4a0-26c6aa840b8e
 md"# Random spheres"
 
-# ╔═╡ a52911a2-1e24-4237-81ca-f613913d29c1
-function scene_random_spheres()::HittableList # dielectric spheres
+# ╔═╡ a7d95d91-6571-4696-bad3-2979296d5f84
+function scene_random_spheres(; elem_type::Type{T}) where T 
 	spheres = Sphere[]
 
 	# ground 
-	push!(spheres, Sphere(@SVector[0f0,-1000f0,-1f0], 1000f0, 
-						  Lambertian(@SVector[0.5f0,0.5f0,0.5f0])))
+	push!(spheres, Sphere((SA{T}[0,-1000,-1]), T(1000), 
+						  Lambertian(SA{T}[0.5,0.5,0.5])))
 
 	for a in -11:10, b in -11:10
-		choose_mat = rand()
-		center = @SVector[a + 0.9f0*rand(), 0.2f0, b + 0.90f0*rand()]
+		choose_mat = trand(T)
+		center = SA[a + T(0.9)*trand(T), T(0.2), b + T(0.9)*trand(T)]
 
 		# skip spheres too close?
-		if norm(center - @SVector[4f0,0.2f0,0f0]) < 0.9f0 continue end 
+		if norm(center - SA{T}[4,0.2,0]) < T(0.9) continue end 
 			
-		if choose_mat < 0.8f0
+		if choose_mat < T(0.8)
 			# diffuse
-			albedo = @SVector[rand() for i ∈ 1:3] .* @SVector[rand() for i ∈ 1:3]
-			push!(spheres, Sphere(center, 0.2f0, Lambertian(albedo)))
-		elseif choose_mat < 0.95f0
+			albedo = @SVector[trand(T) for i ∈ 1:3] .* @SVector[trand(T) for i ∈ 1:3]
+			push!(spheres, Sphere(center, T(0.2), Lambertian(albedo)))
+		elseif choose_mat < T(0.95)
 			# metal
-			albedo = @SVector[random_between(0.5f0,1.0f0) for i ∈ 1:3]
-			fuzz = random_between(0.0f0, 5.0f0)
-			push!(spheres, Sphere(center, 0.2f0, Metal(albedo, fuzz)))
+			albedo = @SVector[random_between(T(0.5),T(1.0)) for i ∈ 1:3]
+			fuzz = random_between(T(0.0), T(5.0))
+			push!(spheres, Sphere(center, T(0.2), Metal(albedo, fuzz)))
 		else
 			# glass
-			push!(spheres, Sphere(center, 0.2f0, Dielectric(1.5f0)))
+			push!(spheres, Sphere(center, T(0.2), Dielectric(T(1.5))))
 		end
 	end
 
-	push!(spheres, Sphere(@SVector[0f0,1f0,0f0], 1.0f0, Dielectric(1.5f0)))
-	push!(spheres, Sphere(@SVector[-4f0,1f0,0f0], 1.0f0, 
-						  Lambertian(@SVector[0.4f0,0.2f0,0.1f0])))
-	push!(spheres, Sphere(@SVector[4f0,1f0,0f0], 1.0f0, 
-						  Metal(@SVector[0.7f0,0.6f0,0.5f0], 0.0f0)))
+	push!(spheres, Sphere((SA{T}[0,1,0]), T(1), Dielectric(T(1.5))))
+	push!(spheres, Sphere((SA{T}[-4,1,0]), T(1), 
+						  Lambertian(SA{T}[0.4,0.2,0.1])))
+	push!(spheres, Sphere((SA{T}[4,1,0]), T(1), 
+						  Metal((SA{T}[0.7,0.6,0.5]), T(0))))
 	HittableList(spheres)
 end
 
-# ╔═╡ 541aa3e5-4632-4f74-8088-f08fe24e07f8
-scene_random_spheres()
+# ╔═╡ a4b5d575-de27-4b44-a448-bd20be7d73ad
+t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; 
+						elem_type=ELEM_TYPE)
 
-# ╔═╡ 840d2599-245c-4e6c-8813-4abdcd802b01
-begin
-	t_lookfrom1 = @SVector[13.0f0,2.0f0,3.0f0]
-	t_lookat1 = @SVector[0.0f0,0.0f0,0.0f0]
-	t_cam1 = default_camera(t_lookfrom1, t_lookat1, @SVector[0.0f0,1.0f0,0.0f0], 
-							20.0f0, 16.0f0/9.0f0, 0.1f0, 10.0f0)
-end
+# ╔═╡ 541aa3e5-4632-4f74-8088-f08fe24e07f8
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
 
 # ╔═╡ da047747-1845-4c2b-b3cb-eaa6534ce5ff
-render(scene_random_spheres(), t_cam1, 200, 32) # takes 3.2s
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 320, 64)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+RandomNumbers = "e6cf234a-135c-5ec9-84dd-332b85af5143"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
+BenchmarkTools = "~1.2.2"
 Images = "~0.25.0"
+LoopVectorization = "~0.12.99"
+RandomNumbers = "~1.5.3"
 StaticArrays = "~1.2.13"
 """
 
@@ -866,10 +914,28 @@ version = "0.4.4"
 [[Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 
+[[BenchmarkTools]]
+deps = ["JSON", "Logging", "Printf", "Profile", "Statistics", "UUIDs"]
+git-tree-sha1 = "940001114a0147b6e4d10624276d56d531dd9b49"
+uuid = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+version = "1.2.2"
+
+[[BitTwiddlingConvenienceFunctions]]
+deps = ["Static"]
+git-tree-sha1 = "bc1317f71de8dce26ea67fcdf7eccc0d0693b75b"
+uuid = "62783981-4cbd-42fc-bca8-16325de8dc4b"
+version = "0.1.1"
+
 [[CEnum]]
 git-tree-sha1 = "215a9aa4a1f23fbd05b92769fdd62559488d70e9"
 uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
 version = "0.4.1"
+
+[[CPUSummary]]
+deps = ["Hwloc", "IfElse", "Static"]
+git-tree-sha1 = "87b0c9c6ee0124d6c1f4ce8cb035dcaf9f90b803"
+uuid = "2a0fbf3d-bb9c-48f3-b0a9-814d99fd7ab9"
+version = "0.1.6"
 
 [[CatIndices]]
 deps = ["CustomUnitRanges", "OffsetArrays"]
@@ -888,6 +954,12 @@ deps = ["LinearAlgebra", "Test"]
 git-tree-sha1 = "9a1d594397670492219635b35a3d830b04730d62"
 uuid = "9e997f8a-9a97-42d5-a9f1-ce6bfc15e2c0"
 version = "0.1.1"
+
+[[CloseOpenIntervals]]
+deps = ["ArrayInterface", "Static"]
+git-tree-sha1 = "7b8f09d58294dc8aa13d91a8544b37c8a1dcbc06"
+uuid = "fb6a15b2-703c-40df-9091-08a04967cfa9"
+version = "0.1.4"
 
 [[Clustering]]
 deps = ["Distances", "LinearAlgebra", "NearestNeighbors", "Printf", "SparseArrays", "Statistics", "StatsBase"]
@@ -912,6 +984,12 @@ deps = ["ColorTypes", "FixedPointNumbers", "Reexport"]
 git-tree-sha1 = "417b0ed7b8b838aa6ca0a87aadf1bb9eb111ce40"
 uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.12.8"
+
+[[CommonSubexpressions]]
+deps = ["MacroTools", "Test"]
+git-tree-sha1 = "7b8a93dba8af7e3b42fecabf646260105ac373f7"
+uuid = "bbf7d656-a473-5ed7-a52c-81e309532950"
+version = "0.3.0"
 
 [[Compat]]
 deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "SHA", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
@@ -957,6 +1035,18 @@ uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
 [[DelimitedFiles]]
 deps = ["Mmap"]
 uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+
+[[DiffResults]]
+deps = ["StaticArrays"]
+git-tree-sha1 = "c18e98cba888c6c25d1c3b048e4b3380ca956805"
+uuid = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+version = "1.0.3"
+
+[[DiffRules]]
+deps = ["LogExpFunctions", "NaNMath", "Random", "SpecialFunctions"]
+git-tree-sha1 = "9bc5dac3c8b6706b58ad5ce24cffd9861f07c94f"
+uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
+version = "1.9.0"
 
 [[Distances]]
 deps = ["LinearAlgebra", "Statistics", "StatsAPI"]
@@ -1014,6 +1104,12 @@ git-tree-sha1 = "335bfdceacc84c5cdf16aadc768aa5ddfc5383cc"
 uuid = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
 version = "0.8.4"
 
+[[ForwardDiff]]
+deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions", "StaticArrays"]
+git-tree-sha1 = "2b72a5624e289ee18256111657663721d59c143e"
+uuid = "f6369f11-7733-5829-9624-2563aa707210"
+version = "0.10.24"
+
 [[Graphics]]
 deps = ["Colors", "LinearAlgebra", "NaNMath"]
 git-tree-sha1 = "1c5a84319923bea76fa145d49e93aa4394c73fc2"
@@ -1025,6 +1121,24 @@ deps = ["ArnoldiMethod", "DataStructures", "Distributed", "Inflate", "LinearAlge
 git-tree-sha1 = "92243c07e786ea3458532e199eb3feee0e7e08eb"
 uuid = "86223c79-3864-5bf0-83f7-82e725a168b6"
 version = "1.4.1"
+
+[[HostCPUFeatures]]
+deps = ["BitTwiddlingConvenienceFunctions", "IfElse", "Libdl", "Static"]
+git-tree-sha1 = "8f0dc80088981ab55702b04bba38097a44a1a3a9"
+uuid = "3e5b6fbb-0976-4d2c-9146-d79de83f2fb0"
+version = "0.1.5"
+
+[[Hwloc]]
+deps = ["Hwloc_jll"]
+git-tree-sha1 = "92d99146066c5c6888d5a3abc871e6a214388b91"
+uuid = "0e44f5e4-bd66-52a0-8798-143a42290a1d"
+version = "2.0.0"
+
+[[Hwloc_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "3395d4d4aeb3c9d31f5929d32760d8baeee88aaf"
+uuid = "e33a78d0-f292-5ffc-b300-72abe9b543c8"
+version = "2.5.0+0"
 
 [[IfElse]]
 git-tree-sha1 = "debdd00ffef04665ccbb3e150747a77560e8fad1"
@@ -1199,11 +1313,23 @@ git-tree-sha1 = "642a199af8b68253517b80bd3bfd17eb4e84df6e"
 uuid = "692b3bcd-3c85-4b1f-b108-f13ce0eb3210"
 version = "1.3.0"
 
+[[JSON]]
+deps = ["Dates", "Mmap", "Parsers", "Unicode"]
+git-tree-sha1 = "8076680b162ada2a031f707ac7b4953e30667a37"
+uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+version = "0.21.2"
+
 [[JpegTurbo_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "d735490ac75c5cb9f1b00d8b5509c11984dc6943"
 uuid = "aacddb02-875f-59d6-b918-886e6ef4fbf8"
 version = "2.1.0+0"
+
+[[LayoutPointers]]
+deps = ["ArrayInterface", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static"]
+git-tree-sha1 = "83b56449c39342a47f3fcdb3bc782bd6d66e1d97"
+uuid = "10f19ff3-798f-405d-979b-55457f8fc047"
+version = "0.1.4"
 
 [[LazyArtifacts]]
 deps = ["Artifacts", "Pkg"]
@@ -1247,6 +1373,12 @@ version = "0.3.5"
 [[Logging]]
 uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
+[[LoopVectorization]]
+deps = ["ArrayInterface", "CPUSummary", "CloseOpenIntervals", "DocStringExtensions", "HostCPUFeatures", "IfElse", "LayoutPointers", "LinearAlgebra", "OffsetArrays", "PolyesterWeave", "Requires", "SIMDDualNumbers", "SLEEFPirates", "Static", "ThreadingUtilities", "UnPack", "VectorizationBase"]
+git-tree-sha1 = "9e10579c154f785b911d9ceb96c33fcc1a661171"
+uuid = "bdcacae8-1622-11e9-2a5c-532679323890"
+version = "0.12.99"
+
 [[MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "Pkg"]
 git-tree-sha1 = "5455aef09b40e5020e1520f551fa3135040d4ed0"
@@ -1258,6 +1390,11 @@ deps = ["Markdown", "Random"]
 git-tree-sha1 = "3d3e902b31198a27340d0bf00d6ac452866021cf"
 uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 version = "0.5.9"
+
+[[ManualMemory]]
+git-tree-sha1 = "9cb207b18148b2199db259adfa923b45593fe08e"
+uuid = "d125e4d3-2237-4719-b19c-fa641b8a4667"
+version = "0.1.6"
 
 [[MappedArrays]]
 git-tree-sha1 = "e8b359ef06ec72e8c030463fe02efe5527ee5142"
@@ -1367,6 +1504,12 @@ git-tree-sha1 = "34c0e9ad262e5f7fc75b10a9952ca7692cfc5fbe"
 uuid = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 version = "0.12.3"
 
+[[Parsers]]
+deps = ["Dates"]
+git-tree-sha1 = "d7fa6237da8004be601e19bd6666083056649918"
+uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+version = "2.1.3"
+
 [[Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
@@ -1377,6 +1520,12 @@ git-tree-sha1 = "a7a7e1a88853564e551e4eba8650f8c38df79b37"
 uuid = "eebad327-c553-4316-9ea0-9fa01ccd7688"
 version = "0.1.1"
 
+[[PolyesterWeave]]
+deps = ["BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "Static", "ThreadingUtilities"]
+git-tree-sha1 = "a3ff99bf561183ee20386aec98ab8f4a12dc724a"
+uuid = "1d0040c9-8b98-4ee7-8388-3f51789ca0ad"
+version = "0.1.2"
+
 [[Preferences]]
 deps = ["TOML"]
 git-tree-sha1 = "00cfd92944ca9c760982747e9a1d0d5d86ab1e5a"
@@ -1386,6 +1535,10 @@ version = "1.2.2"
 [[Printf]]
 deps = ["Unicode"]
 uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[[Profile]]
+deps = ["Printf"]
+uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 
 [[ProgressMeter]]
 deps = ["Distributed", "Printf"]
@@ -1400,6 +1553,12 @@ uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
 [[Random]]
 deps = ["Serialization"]
 uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[[RandomNumbers]]
+deps = ["Random", "Requires"]
+git-tree-sha1 = "043da614cc7e95c703498a491e2c21f58a2b8111"
+uuid = "e6cf234a-135c-5ec9-84dd-332b85af5143"
+version = "1.5.3"
 
 [[RangeArrays]]
 git-tree-sha1 = "b9039e93773ddcfc828f12aadf7115b4b4d225f5"
@@ -1437,6 +1596,23 @@ version = "1.0.4"
 
 [[SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[[SIMDDualNumbers]]
+deps = ["ForwardDiff", "IfElse", "SLEEFPirates", "VectorizationBase"]
+git-tree-sha1 = "62c2da6eb66de8bb88081d20528647140d4daa0e"
+uuid = "3cdde19b-5bb0-4aaf-8931-af3e248e098b"
+version = "0.1.0"
+
+[[SIMDTypes]]
+git-tree-sha1 = "330289636fb8107c5f32088d2741e9fd7a061a5c"
+uuid = "94e857df-77ce-4151-89e5-788b33177be4"
+version = "0.1.0"
+
+[[SLEEFPirates]]
+deps = ["IfElse", "Static", "VectorizationBase"]
+git-tree-sha1 = "1410aad1c6b35862573c01b96cd1f6dbe3979994"
+uuid = "476501e8-09a2-5ece-8869-fb82de89a1fa"
+version = "0.6.28"
 
 [[Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
@@ -1527,6 +1703,12 @@ version = "0.1.1"
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[[ThreadingUtilities]]
+deps = ["ManualMemory"]
+git-tree-sha1 = "03013c6ae7f1824131b2ae2fc1d49793b51e8394"
+uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
+version = "0.4.6"
+
 [[TiffImages]]
 deps = ["ColorTypes", "DocStringExtensions", "FileIO", "FixedPointNumbers", "IndirectArrays", "Inflate", "OffsetArrays", "OrderedCollections", "PkgVersion", "ProgressMeter"]
 git-tree-sha1 = "945b8d87c5e8d5e34e6207ee15edb9d11ae44716"
@@ -1556,6 +1738,12 @@ version = "1.0.2"
 
 [[Unicode]]
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+
+[[VectorizationBase]]
+deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "Hwloc", "IfElse", "LayoutPointers", "Libdl", "LinearAlgebra", "SIMDTypes", "Static"]
+git-tree-sha1 = "17e5847bb36730d90801170ecd0ce4041a3dde86"
+uuid = "3d5dd08c-fd9d-11e8-17fa-ed2836048c2f"
+version = "0.21.22"
 
 [[WoodburyMatrices]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -1593,6 +1781,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─611d5eae-4b09-11ec-27bf-ef4a1ecdcc41
 # ╟─97bb4432-ed41-423b-b4d9-bafc519de641
 # ╠═38fdd4ef-c383-4f97-8451-c6f602307e7d
+# ╠═9114285c-4c5a-482c-94d8-21c3e4cc79e4
 # ╠═84d29423-cf11-41c3-af4d-c5f63b1ef23e
 # ╠═7d26fef0-9a06-479a-ae08-e9d04e455767
 # ╠═f29ad2c0-c3ff-484d-8fdd-dff34d2bb863
@@ -1602,9 +1791,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═154d736b-8fdc-44af-ae2a-9e5ba6d2c92e
 # ╟─216922d8-613a-4ac1-9559-40878e6587e2
 # ╠═961fd749-d439-4dfa-ae21-b1659dc54511
-# ╠═3dceca5d-7d1e-425b-9516-24e0a24adaff
 # ╠═f8007c75-9487-414a-9592-138a696c2957
 # ╠═668030c8-24a7-4aa6-b858-cedf8ac5f988
+# ╠═71cee0d1-ff0a-4234-b393-8f20834f6415
 # ╠═3eb50f44-9091-45e8-a7e1-92d25b4b2090
 # ╠═78f209df-d176-4711-80fc-a8054771f105
 # ╠═e88de775-6904-4182-8209-06db22758470
@@ -1616,17 +1805,19 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═53832af1-a9be-4e02-8b71-a70dae63c233
 # ╠═81b4c9e4-9f93-45ca-9fa0-7e9686a55e9a
 # ╟─772674b0-5c40-4457-9526-5b4e81cca711
+# ╠═cdf96967-6790-4bd5-8890-40de9365a05a
+# ╠═c58754e4-26b6-4b1d-be61-447496332757
 # ╠═709861a3-202a-4bff-a46d-b46c6e14b334
 # ╠═135000d6-a675-4d8b-9385-50853bf9a169
 # ╠═7d1146d7-74da-42e6-92c2-1312ed03f70d
 # ╠═46a4aa4b-82c1-4941-b36d-dc8c977af2bc
 # ╠═203a9b25-742a-4d8b-adee-862ce4c67670
 # ╠═2e98c6bd-0289-4105-ad25-24414ecf2750
+# ╠═b5407efd-8071-43e7-b9f4-de1bd9de7311
 # ╠═c0c23cb3-6a57-487d-943a-af4330a94ffe
+# ╠═3851fa56-2c73-45eb-9089-65eec0237f14
 # ╟─678214c5-de81-489f-b002-c343d48071c9
 # ╠═cbb6418c-79e9-4359-80a6-40a8fa40679e
-# ╠═14be6068-6a15-4fad-ac0a-f156da71f103
-# ╠═64ef0313-2d2b-49d5-a1a1-3b04426a82f8
 # ╠═971777a6-f269-4344-8dba-7a55118396e5
 # ╠═655ffa6c-f1e9-4149-8f1d-51145c5a51e4
 # ╟─9075f8ed-f319-486d-94b2-486806aba3fd
@@ -1639,7 +1830,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═ed6ab8be-587c-4cb6-8172-618c74d3f9cc
 # ╠═a65c68c9-e489-465a-9687-93ae9da14a5e
 # ╠═2c4b4453-1a46-4889-9a14-16b18cc8c240
-# ╠═98c43f3f-4bfc-49db-806a-850b7d75b5a4
 # ╠═3b570d37-f407-41d8-b8a0-a0af4d85b14d
 # ╠═138bb5b6-0f45-4f13-8339-5110eb7cd1ff
 # ╟─6b36d245-bf01-45a7-b119-8315226dd4a3
@@ -1647,9 +1837,8 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═427f247c-055c-459e-9862-26e9f6f3e24f
 # ╠═88e51c27-0f28-4dcc-b9e9-ac44eeb876f5
 # ╠═7c4a67b2-8208-4cd4-b1ea-16f6f50adfe8
-# ╠═ca649864-5a6d-4ca7-896e-e80e8a48443e
+# ╠═87de4e8e-f7a2-4b47-991c-9b2988782ef4
 # ╠═485f9c5b-4c5d-453c-b190-e84ae0cd1a21
-# ╠═c63d10c2-dd43-4836-83ee-61b782545a02
 # ╠═78efebc5-53fd-417d-bd9e-667fd504e3fd
 # ╠═05e57afd-6eb9-42c5-9666-7be3771fa6b8
 # ╠═08e18ae5-9927-485e-9644-552f03e06f27
@@ -1664,13 +1853,16 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─282a4912-7a6e-44ae-90eb-f2f7c8f3d0f4
 # ╠═a0e5a1f3-244f-427b-a335-7e233af1d9d8
 # ╠═5d00f26b-35f2-4071-8e04-227ffc25f184
+# ╠═eda07d5f-ab0a-41ba-a411-577be0d7e56e
 # ╠═c1aef1be-79d4-4417-be36-ae8416465986
 # ╠═94081092-afc6-4359-bd2c-15e8407bf70e
 # ╠═813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
 # ╟─891ce2c8-f8b2-472b-a8d9-389dafddcf22
 # ╠═64104df6-4b79-4329-bfed-14619aa73e3c
-# ╠═aa38117f-45e8-4070-a412-958f0ce19aa5
+# ╠═90dbe8e5-139d-404a-bfed-177776dc5401
+# ╠═e4e74dd4-7f0d-4af7-9cf1-a615a0304293
 # ╠═9fd417cc-afa9-4f12-9c29-748f0522554c
+# ╠═aa38117f-45e8-4070-a412-958f0ce19aa5
 # ╠═a2221922-31be-42f3-8f70-845fae385d2c
 # ╟─5f1bae02-d425-4a73-8668-d6383faba79d
 # ╟─71f3626c-e61d-4838-82b9-ac8a978c0cb4
@@ -1682,19 +1874,17 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═ae3b8f15-985d-4f74-ac8c-86a3ffc3b8b1
 # ╠═ddf5883c-036a-4a21-908d-bb7cec731f7f
 # ╠═a1564d79-3628-4121-99a9-d3674e16eb04
-# ╠═330a8972-adbd-471b-ade1-15901a258cbb
 # ╠═2e9672e3-f2b8-439e-b1f3-3cc60a459885
 # ╟─0587d381-b957-4c40-b6b7-e5e0fd46267b
 # ╠═7c75b0d8-578d-4ca9-8d74-935c1ac582b9
 # ╠═dcde1539-23af-4abf-96d3-6a903add3ea8
-# ╠═e7f5c672-0bd9-4cfe-8a47-17cd67aa01f4
 # ╟─e3ef265c-1911-429d-84be-5d5174d55fa1
-# ╠═a7d95d91-6571-4696-bad3-2979296d5f84
-# ╠═5bc1a6eb-8867-48b4-b141-fc0636d36694
+# ╠═f49ac345-c19c-4fe5-9dee-dbfeff3ff646
+# ╠═90bb20e4-4afa-46aa-a7b7-5de446efa439
 # ╟─3c54cde0-6509-45e1-a4a0-26c6aa840b8e
-# ╠═a52911a2-1e24-4237-81ca-f613913d29c1
+# ╠═a7d95d91-6571-4696-bad3-2979296d5f84
+# ╠═a4b5d575-de27-4b44-a448-bd20be7d73ad
 # ╠═541aa3e5-4632-4f74-8088-f08fe24e07f8
-# ╠═840d2599-245c-4e6c-8813-4abdcd802b01
 # ╠═da047747-1845-4c2b-b3cb-eaa6534ce5ff
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
