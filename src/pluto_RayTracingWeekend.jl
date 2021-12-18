@@ -405,12 +405,11 @@ end
 @inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, 
 							   tmax::T)::Union{HitRecord,Nothing} where T
     oc = r.origin - s.center
-    #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
-	a = 1
+    a = 1 # r.dir ⋅ r.dir is unnecessary since r.dir is normalized
 	half_b = oc ⋅ r.dir
     c = oc⋅oc - s.radius^2
     discriminant = half_b^2 - a*c
-	if discriminant < 0 return nothing end # no hit!
+	if discriminant < 0 return nothing end
 	sqrtd = √discriminant
 	
 	# Find the nearest root that lies in the acceptable range
@@ -418,14 +417,14 @@ end
 	if root < tmin || tmax < root
 		root = (-half_b + sqrtd) / a
 		if root < tmin || tmax < root
-			return nothing # no hit!
+			return nothing
 		end
 	end
 	
 	t = root
 	p = point(r, t)
 	n⃗ = (p - s.center) / s.radius
-	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
+	ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
 end
 
 # ╔═╡ 05e57afd-6eb9-42c5-9666-7be3771fa6b8
@@ -558,7 +557,7 @@ default_camera(SA[0f0,0f0,0f0]) # Float32 camera
 # ╔═╡ 94081092-afc6-4359-bd2c-15e8407bf70e
 @inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
 	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
-	offset = c.u * rd.x + c.v * rd.y #offset = c.u * rd.x + c.v * rd.y
+	offset = c.u * rd.x + c.v * rd.y
     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
 									 t*c.vertical - c.origin - offset))
 end
@@ -567,16 +566,14 @@ end
 # example with Float32:
 get_ray(default_camera(SA[0f0,0f0,0f0]), 0.0f0, 0.0f0)
 
-# ╔═╡ 891ce2c8-f8b2-472b-a8d9-389dafddcf22
-md"# Render
-
-(equivalent to final `main`)"
-
 # ╔═╡ 90dbe8e5-139d-404a-bfed-177776dc5401
 ELEM_TYPE = Float64 # default Element type
 
 # ╔═╡ e4e74dd4-7f0d-4af7-9cf1-a615a0304293
-t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
+t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0]);
+
+# ╔═╡ 891ce2c8-f8b2-472b-a8d9-389dafddcf22
+md"# Render"
 
 # ╔═╡ 5f1bae02-d425-4a73-8668-d6383faba79d
 md"""# Dielectrics
@@ -594,17 +591,13 @@ Refracted angle `sinθ′ = (η/η′)⋅sinθ`, where η (\eta) are the refract
 Split the parts of the ray into `R′=R′⊥+R′∥` (perpendicular and parallel to n⃗′)."""
 
 # ╔═╡ 9dc64353-c41c-45b4-aacd-12d5d6117c58
-# """
-# 	Args:
-# 		refraction_ratio: incident refraction index divided by refraction index of 
-# 			hit surface. i.e. η/η′ in the figure above"""
 @inline @fastmath function refract(dir::Vec3{T}, n⃗::Vec3{T}, 
 								   refraction_ratio::T) where T
 	cosθ = min(-dir ⋅ n⃗, one(T))
 	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
 	r_out_parallel = -√(abs(one(T)-squared_length(r_out_perp))) * n⃗
 	normalize(r_out_perp + r_out_parallel)
-end
+end;
 
 # ╔═╡ bbfd4db5-3650-4f27-9777-2ff981c3d28b
 begin # optional tests
@@ -685,17 +678,10 @@ end
 
 
 # ╔═╡ 64104df6-4b79-4329-bfed-14619aa73e3c
-# """Render an image of `scene` using the specified camera, number of samples.
-#
-# 	Args:
-# 		scene: a HittableList, e.g. a list of spheres
-# 		n_samples: number of samples per pixel, eq. to C++ samples_per_pixel
-#
-# 	Equivalent to C++'s `main` function."""
 function render(scene::HittableList, cam::Camera{T}, image_width=400,
 				n_samples=1) where T
 	# Image
-	aspect_ratio = T(16.0/9.0) # TODO: use cam.aspect_ratio for consistency
+	aspect_ratio = T(16.0/9.0)
 	image_height = convert(Int64, floor(image_width / aspect_ratio))
 
 	# Render
@@ -703,12 +689,10 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	f32_image_width = convert(Float32, image_width)
 	f32_image_height = convert(Float32, image_height)
 	
-	# Reset the random seeds, so we always get the same images...
-	# Makes comparing performance more accurate.
-	reseed!() 
+	reseed!() # Reset the random seeds, to get same images... easier to compare perf!
 
-	Threads.@threads for i in 1:image_height
-		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
+	Threads.@threads for i in 1:image_height # Use every allowed thread
+		@inbounds for j in 1:image_width
 			accum_color = SA{T}[0,0,0]
 			u = convert(T, j/image_width)
 			v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
@@ -716,8 +700,7 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 			for s in 1:n_samples
 				if s == 1 # 1st sample is always centered
 					δu = δv = T(0)
-				else
-					# Supersampling antialiasing.
+				else # Supersampling antialiasing.
 					δu = trand(T) / f32_image_width
 					δv = trand(T) / f32_image_height
 				end
@@ -728,13 +711,10 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 		end
 	end
 	img
-end
-
-# ╔═╡ 9fd417cc-afa9-4f12-9c29-748f0522554c
-render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 1) # 1 sample
+end;
 
 # ╔═╡ aa38117f-45e8-4070-a412-958f0ce19aa5
-render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 64)
+render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 64) # took 247ms
 
 # ╔═╡ a2221922-31be-42f3-8f70-845fae385d2c
 render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 200, 256)
@@ -775,7 +755,7 @@ md"# Positioning camera"
 # ╔═╡ 7c75b0d8-578d-4ca9-8d74-935c1ac582b9
 function scene_blue_red_spheres(; elem_type::Type{T}) where T
 	spheres = Sphere[]
-	R = cos(pi/4)
+	R = cos(π/4)
 	push!(spheres, Sphere((SA{T}[-R,0,-1]), R, Lambertian(SA{T}[0,0,1]))) 
 	push!(spheres, Sphere((SA{T}[ R,0,-1]), R, Lambertian(SA{T}[1,0,0]))) 
 	HittableList(spheres)
@@ -837,13 +817,10 @@ end
 
 # ╔═╡ a4b5d575-de27-4b44-a448-bd20be7d73ad
 t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; 
-						elem_type=ELEM_TYPE)
-
-# ╔═╡ 541aa3e5-4632-4f74-8088-f08fe24e07f8
-render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 96, 1)
+						elem_type=ELEM_TYPE);
 
 # ╔═╡ da047747-1845-4c2b-b3cb-eaa6534ce5ff
-render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 320, 64)
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 320, 32) # 1.1s
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1857,11 +1834,10 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═c1aef1be-79d4-4417-be36-ae8416465986
 # ╠═94081092-afc6-4359-bd2c-15e8407bf70e
 # ╠═813eaa13-2eb2-4302-9e4d-5d1dab0ac7c4
-# ╟─891ce2c8-f8b2-472b-a8d9-389dafddcf22
-# ╠═64104df6-4b79-4329-bfed-14619aa73e3c
 # ╠═90dbe8e5-139d-404a-bfed-177776dc5401
 # ╠═e4e74dd4-7f0d-4af7-9cf1-a615a0304293
-# ╠═9fd417cc-afa9-4f12-9c29-748f0522554c
+# ╟─891ce2c8-f8b2-472b-a8d9-389dafddcf22
+# ╠═64104df6-4b79-4329-bfed-14619aa73e3c
 # ╠═aa38117f-45e8-4070-a412-958f0ce19aa5
 # ╠═a2221922-31be-42f3-8f70-845fae385d2c
 # ╟─5f1bae02-d425-4a73-8668-d6383faba79d
@@ -1884,7 +1860,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─3c54cde0-6509-45e1-a4a0-26c6aa840b8e
 # ╠═a7d95d91-6571-4696-bad3-2979296d5f84
 # ╠═a4b5d575-de27-4b44-a448-bd20be7d73ad
-# ╠═541aa3e5-4632-4f74-8088-f08fe24e07f8
 # ╠═da047747-1845-4c2b-b3cb-eaa6534ce5ff
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
