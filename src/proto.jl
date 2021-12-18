@@ -1,8 +1,6 @@
 # Prototype - copied from pluto_RayTracingWeekend.jl
 # Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.github.io/books/RayTracingInOneWeekend.html) and 
 # [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl)"
-using Pkg
-Pkg.activate(@__DIR__)
 
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 using LoopVectorization: @turbo
@@ -104,7 +102,6 @@ struct Ray{T}
 	dir::Vec3{T} # Vec3 # direction (unit vector)
 end
 
-# interpolates between blue and white
 _origin = SA[0.0,0.0,0.0]
 _v3_minusY = SA[0.0,-1.0,0.0]
 _t_ray1 = Ray(_origin, _v3_minusY)
