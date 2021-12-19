@@ -4,7 +4,7 @@
 
 using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
 using LoopVectorization: @turbo
-using SIMD: @simd
+#using SIMD: @simd
 
 Threads.nthreads()
 
