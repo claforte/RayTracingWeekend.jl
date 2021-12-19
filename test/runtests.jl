@@ -33,50 +33,41 @@ end
 
 @testset "RayTracingWeekend.jl" begin
     t_col = SA[0.4, 0.5, 0.1] # test color
+
+    # Verify that no heap allocations occur for low-level functions
     @test (@ballocated squared_length($t_col)) == 0 # 1.162 ns
 
     @test !near_zero(t_col)
     @test (@ballocated near_zero($t_col)) == 0 # 1.382 ns
 
+    #@show @btime rgb($t_col) # 1.382 ns
+    @test (@ballocated rgb($t_col)) == 0
 
-    @show rgb(t_col)
-    # #rgb($t_col) # 1.172 ns (0 allocations: 0 bytes)
+    _origin = SA[0.0,0.0,0.0]
+    _v3_minusY = SA[0.0,-1.0,0.0]
+    _t_ray1 = Ray(_origin, _v3_minusY)
+    
+    # Float32: 6.161 ns (0 allocations: 0 bytes)
+    # Float64: 6.900 ns (0 allocations: 0 bytes)
+    @test (@ballocated Ray($_origin, $_v3_minusY)) == 0
+    
+    @test (@ballocated point($_t_ray1, 0.5)) == 0 # 1.412 ns
 
-    # #rgb_gamma2($t_col) # 3.927 ns (0 allocations: 0 bytes)
+    @test (@ballocated skycolor($_t_ray1)) == 0 # 1.402 ns
 
-    # _origin = SA[0.0,0.0,0.0]
-    # _v3_minusY = SA[0.0,-1.0,0.0]
-    # _t_ray1 = Ray(_origin, _v3_minusY)
-    # # Float32: 6.161 ns (0 allocations: 0 bytes)
-    # # Float64: 6.900 ns (0 allocations: 0 bytes)
-    # #@btime Ray($_origin, $_v3_minusY) 
+    @test (@ballocated rgb(skycolor($_t_ray1))) == 0 # 1.412 ns
+    
+    @test (@ballocated trand()) == 0
+    
+    @test (@ballocated random_between(50.0, 100.0)) == 0 # 2.695 ns
 
-    # #@btime point($_t_ray1, 0.5) # 1.412 ns (0 allocations: 0 bytes)
-
-    # # 1.402 ns (0 allocations: 0 bytes)
-    # #@btime skycolor($_t_ray1)
-
-    # # 1.412 ns (0 allocations: 0 bytes)
-    # #@btime rgb(skycolor($_t_ray1)) # 291.492 ns (4 allocations: 80 bytes)
-
-    # #@btime trand()
-
-    # #    2.695 ns (0 allocations: 0 bytes)
-    # #@btime random_between(50.0, 100.0) 
-
-    # #@btime random_vec3(-1.0,1.0)
-
-    # #@btime random_vec2(-1.0f0,1.0f0) # 3.677 ns (0 allocations: 0 bytes)
-
+    @test (@ballocated random_vec3(-1.0,1.0)) == 0
+    
+    @test (@ballocated random_vec2(-1.0f0,1.0f0)) == 0
+    
     # # REMEMBER: the times are somewhat random! Use best timing of 5!
-    # # Float32: 34.690 ns (0 allocations: 0 bytes)
-    # # Float64: 34.065 ns (0 allocations: 0 bytes)
-    # # rand() using MersenneTwister _rng w/ Float64:
-    # #   21.333 ns (0 allocations: 0 bytes)
-    # # rand() using Xoroshiro128Plus _rng w/ Float64:
-    # #   19.716 ns (0 allocations: 0 bytes)
-    # random_vec3_in_sphere(Float64)
-
+    @test (@ballocated random_vec3_in_sphere(Float64)) == 0 # 19.716 ns
+    
     # "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
     # @inline random_vec3_on_sphere(::Type{T}) where T = normalize(random_vec3_in_sphere(T))
 

@@ -3,7 +3,7 @@ module RayTracingWeekend
 using Images, LinearAlgebra, Random, RandomNumbers.Xorshifts, StaticArrays
 
 export color_vec3_in_rgb, default_camera, get_ray, hit, near_zero, point, random_between, random_vec2, 
-        random_vec2_in_disk, random_vec3, random_vec3_on_sphere, ray_color, ray_to_HitRecord, reflect, 
+        random_vec2_in_disk, random_vec3, random_vec3_in_sphere, random_vec3_on_sphere, ray_color, ray_to_HitRecord, reflect, 
         reflectance, refract, render, reseed!, rgb, rgb_gamma2, skycolor, squared_length, trand
 export Camera, Dielectric, Hittable, HittableList, HitRecord, Lambertian, Material, Metal, Ray, Scatter, Sphere, Vec3
 export scene_2_spheres, scene_4_spheres, scene_blue_red_spheres, scene_diel_spheres, scene_random_spheres
@@ -56,6 +56,15 @@ end
 @inline function trand(::Type{T}) where T # thread-local rand()
     @inbounds rng = TRNG[Threads.threadid()]
     rand(rng, T)
+end
+
+@inline function random_vec3_in_sphere(::Type{T}) where T # equiv to random_in_unit_sphere()
+	while true
+		p = random_vec3(T(-1), T(1))
+		if p⋅p <= 1
+			return p
+		end
+	end
 end
 
 @inline random_between(min::T=0, max::T=1) where T = trand(T)*(max-min) + min # equiv to random_double()
