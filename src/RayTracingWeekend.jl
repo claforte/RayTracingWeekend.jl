@@ -326,9 +326,10 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	
 	# Reset the random seeds, so we always get the same images...
 	# Makes comparing performance more accurate.
-	reseed!() 
+	reseed!()
 
-	Threads.@threads for i in 1:image_height
+	#Threads.@threads # claforte: uncomment for CRASH?!
+	for i in 1:image_height
 		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
 			accum_color = SA{T}[0,0,0]
 			u = convert(T, j/image_width)

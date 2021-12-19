@@ -1,6 +1,26 @@
 using RayTracingWeekend
+
+using BenchmarkTools
+using Images
+using LinearAlgebra
+using InteractiveUtils
+using StaticArrays
 using Test
-using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
+
+"Modified from BenchmarkTools @ballocated. Returns number of heap allocations, instead of bytes."
+macro ballocs(args...)
+    return esc(quote
+        $BenchmarkTools.allocs($BenchmarkTools.minimum($BenchmarkTools.@benchmark $(args...)))
+    end)
+end
+
+"Test passes if `args...` causes no heap allocations."
+macro test_no_allocs(args...)
+    return esc(quote
+        # limit number of samples to 5... since the variance is extremely low
+        @test (@ballocs $(args...) samples=3) == 0
+    end)
+end
 
 @testset "Dep_Images" begin # dependencies on Images.jl
     img = rand(4, 3)
@@ -31,17 +51,89 @@ using BenchmarkTools, Images, InteractiveUtils, LinearAlgebra, StaticArrays
     gradient(20,10)
 end
 
+""" Temporary function to shoot rays through each pixel. Later replaced by `render`
+    
+    Args:
+        scene: a function that takes a ray, returns the color of any object it hit
+"""
+function shoot_rays1(nx::Int, ny::Int, scene, ::Type{T}) where T
+    lower_left_corner = SA[-2,-1,-1]
+    horizontal = SA[4,0,0]
+    vertical = SA[T(0),T(2),T(0)]
+    origin = SA[T(0),T(0),T(0)]
+    
+    img = zeros(RGB{T}, ny, nx)
+    Threads.@threads for j in 1:nx
+        @inbounds for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
+            u = T(j/nx)
+            v = T((ny-i)/ny) # Y-up!
+            ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
+            #r = x/nx
+            #g = y/ny
+            #b = 0.2
+            img[i,j] = rgb(scene(ray))
+        end
+    end
+    img
+end
+
+# @fastmath speeds up a lot!
+@inline @fastmath function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
+    oc = r.origin - center
+    #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+    a = 1
+    b = 2oc ⋅ r.dir
+    c = (oc ⋅ oc) - radius*radius
+    discriminant = b*b - 4a*c
+    discriminant > 0
+end
+
+@inline function sphere_scene1(r::Ray{T}) where T
+    if hit_sphere1(SA[T(0), T(0), T(-1)], T(0.5), r) # sphere of radius 0.5 centered at z=-1
+        return SA[T(1),T(0),T(0)] # red
+    else
+        skycolor(r)
+    end
+end
+
+@inline function hit_sphere2(center::Vec3{T}, radius::T, r::Ray{T}) where T
+    oc = r.origin - center
+    #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+    a = 1
+    b = 2oc ⋅ r.dir
+    c = (oc ⋅ oc) - radius^2
+    discriminant = b*b - 4a*c
+    if discriminant < 0
+        return -1
+    else
+        return (-b - sqrt(discriminant)) / 2a
+    end
+end
+
+@inline function sphere_scene2(r::Ray{T}) where T
+    sphere_center = SA[T(0),T(0),T(-1)]
+    t = hit_sphere2(sphere_center, T(0.5), r) # sphere of radius 0.5 centered at z=-1
+    if t > T(0)
+        n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
+        return T(0.5)*n⃗ + SA[T(0.5),T(0.5),T(0.5)] # remap normal to rgb
+    else
+        skycolor(r)
+    end
+end
+
+
 @testset "RayTracingWeekend.jl" begin
     t_col = SA[0.4, 0.5, 0.1] # test color
 
     # Verify that no heap allocations occur for low-level functions
-    @test (@ballocated squared_length($t_col)) == 0 # 1.162 ns
+    @test_no_allocs squared_length($t_col) # 1.162 ns
 
     @test !near_zero(t_col)
-    @test (@ballocated near_zero($t_col)) == 0 # 1.382 ns
+    @test_no_allocs near_zero($t_col) # 1.382 ns
 
     #@show @btime rgb($t_col) # 1.382 ns
-    @test (@ballocated rgb($t_col)) == 0
+    @test rgb(t_col) == RGB{Float64}(0.4,0.5,0.1)
+    @test_no_allocs rgb($t_col)
 
     _origin = SA[0.0,0.0,0.0]
     _v3_minusY = SA[0.0,-1.0,0.0]
@@ -49,178 +141,28 @@ end
     
     # Float32: 6.161 ns (0 allocations: 0 bytes)
     # Float64: 6.900 ns (0 allocations: 0 bytes)
-    @test (@ballocated Ray($_origin, $_v3_minusY)) == 0
+    @test_no_allocs Ray($_origin, $_v3_minusY)
+    @test_no_allocs point($_t_ray1, 0.5) # 1.412 ns
+    @test_no_allocs skycolor($_t_ray1) # 1.402 ns
+    @test_no_allocs rgb(skycolor($_t_ray1)) # 1.412 ns
+    @test_no_allocs trand()
+    @test_no_allocs random_between(50.0, 100.0) # 2.695 ns
+    @test_no_allocs random_vec3(-1.0,1.0)
+    @test_no_allocs random_vec2(-1.0f0,1.0f0)
     
-    @test (@ballocated point($_t_ray1, 0.5)) == 0 # 1.412 ns
+    # REMEMBER: the times are somewhat random! e.g. use best timing of 5!
+    @test_no_allocs random_vec3_in_sphere(Float64) # 19.716 ns
+    @test_no_allocs random_vec3_on_sphere(Float64)
+    @test_no_allocs random_vec2_in_disk(Float64)
 
-    @test (@ballocated skycolor($_t_ray1)) == 0 # 1.402 ns
+    @benchmark random_vec2_in_disk(Float64) samples=3
+     
+    # varies depending on number of threads, maybe mem alignment?
+    @test (@ballocs shoot_rays1(20, 10, $skycolor, $Float32) samples=3) < 85 # typically 81-83
 
-    @test (@ballocated rgb(skycolor($_t_ray1))) == 0 # 1.412 ns
+    shoot_rays1(40, 20, sphere_scene1, Float32)
     
-    @test (@ballocated trand()) == 0
-    
-    @test (@ballocated random_between(50.0, 100.0)) == 0 # 2.695 ns
-
-    @test (@ballocated random_vec3(-1.0,1.0)) == 0
-    
-    @test (@ballocated random_vec2(-1.0f0,1.0f0)) == 0
-    
-    # # REMEMBER: the times are somewhat random! Use best timing of 5!
-    @test (@ballocated random_vec3_in_sphere(Float64)) == 0 # 19.716 ns
-    
-    # "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
-    # @inline random_vec3_on_sphere(::Type{T}) where T = normalize(random_vec3_in_sphere(T))
-
-    # # REMEMBER: the times are somewhat random! Use best timing of 5! 
-    # # Before optim:
-    # #   517.538 ns (12 allocations: 418 bytes)... but random
-    # # After reusing _rand_vec3:
-    # #    92.865 ns (2 allocations: 60 bytes)
-    # # Various speed-ups (don't use Vec3, etc.): 
-    # #    52.427 ns (0 allocations: 0 bytes)
-    # # Float64: 34.549 ns (0 allocations: 0 bytes)
-    # # Float32: 36.274 ns (0 allocations: 0 bytes)
-    # # rand() using Xoroshiro128Plus _rng w/ Float64:
-    # #   19.937 ns (0 allocations: 0 bytes)
-    # random_vec3_on_sphere(Float32)
-
-    # @inline function random_vec2_in_disk(::Type{T}) where T # equiv to random_in_unit_disk()
-    #     while true
-    #         p = random_vec2(T(-1), T(1))
-    #         if p⋅p <= 1
-    #             return p
-    #         end
-    #     end
-    # end
-
-    # # Keep best timing of 5!
-    # # Float32: 14.391 ns (0 allocations: 0 bytes)
-    # # Float64: 14.392 ns (0 allocations: 0 bytes)
-    # # rand() using MersenneTwister _rng w/ Float64:
-    # #   7.925 ns (0 allocations: 0 bytes)
-    # # rand() using Xoroshiro128Plus _rng w/ Float64:
-    # #   7.574 ns (0 allocations: 0 bytes)
-    # random_vec2_in_disk(Float64)
-
-    # @inline @fastmath function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
-    #     oc = r.origin - center
-    #     #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
-    #     a = 1
-    #     b = 2oc ⋅ r.dir
-    #     c = (oc ⋅ oc) - radius*radius
-    #     discriminant = b*b - 4a*c
-    #     discriminant > 0
-    # end
-    
-    # @inline function sphere_scene1(r::Ray{T}) where T
-    #     if hit_sphere1(SA[T(0), T(0), T(-1)], T(0.5), r) # sphere of radius 0.5 centered at z=-1
-    #         return SA[T(1),T(0),T(0)] # red
-    #     else
-    #         skycolor(r)
-    #     end
-    # end
-    
-    
-
-
-    # """ Temporary function to shoot rays through each pixel. Later replaced by `render`
-        
-    #     Args:
-    #         scene: a function that takes a ray, returns the color of any object it hit
-    # """
-    # function main(nx::Int, ny::Int, scene, ::Type{T}) where T
-    #     lower_left_corner = SA[-2,-1,-1]
-    #     horizontal = SA[4,0,0]
-    #     vertical = SA[T(0),T(2),T(0)]
-    #     origin = SA[T(0),T(0),T(0)]
-        
-    #     img = zeros(RGB{T}, ny, nx)
-    #     Threads.@threads for j in 1:nx
-    #         @inbounds for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
-    #             u = T(j/nx)
-    #             v = T((ny-i)/ny) # Y-up!
-    #             ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
-    #             #r = x/nx
-    #             #g = y/ny
-    #             #b = 0.2
-    #             img[i,j] = rgb(scene(ray))
-    #         end
-    #     end
-    #     img
-    # end
-
-    # # Before optimizations:
-    # #   28.630 ms (520010 allocations: 13.05 MiB)
-    # # After optimizations (skycolor, rand, etc.)
-    # #   10.358 ms (220010 allocations: 5.42 MiB) # at this stage, rgb() is most likely the culprit..
-    # # After replacing Color,Vec3 by @SVector:
-    # #    6.539 ms (80002 allocations: 1.75 MiB)
-    # # Lots more optimizations, including @inline of low-level functions:
-    # #  161.546 μs (     2 allocations: 234.45 KiB)
-    # # With Vec3{T}...
-    # # Float32: 174.560 μs (2 allocations: 234.45 KiB)
-    # # Float64: 161.516 μs (2 allocations: 468.83 KiB)
-    # # Above was all using 1 single thread. With 16 threads:
-    # #   52.218 μs (83 allocations: 241.75 KiB)
-    # # With @inbounds:
-    # #   49.243 μs (83 allocations: 241.75 KiB)
-    # main(200, 100, skycolor, Float32) 
-
-    # #md"# Chapter 5: Add a sphere"
-
-    # # @fastmath speeds up a lot!
-    # @inline @fastmath function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
-    #     oc = r.origin - center
-    #     #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
-    #     a = 1
-    #     b = 2oc ⋅ r.dir
-    #     c = (oc ⋅ oc) - radius*radius
-    #     discriminant = b*b - 4a*c
-    #     discriminant > 0
-    # end
-
-    # @inline function sphere_scene1(r::Ray{T}) where T
-    #     if hit_sphere1(SA[T(0), T(0), T(-1)], T(0.5), r) # sphere of radius 0.5 centered at z=-1
-    #         return SA[T(1),T(0),T(0)] # red
-    #     else
-    #         skycolor(r)
-    #     end
-    # end
-
-    # # Float32: 149.613 μs (2 allocations: 234.45 KiB)
-    # # Float64: 173.818 μs (2 allocations: 468.83 KiB)
-    # # w/ @fastmath in hit_sphere1:
-    # #    63.751 μs (83 allocations: 476.14 KiB)
-    # # Eliminate unnecessary r.dir ⋅ r.dir: 
-    # #    61.416 μs (83 allocations: 476.14 KiB)
-    # main(200, 100, sphere_scene1, Float64) 
-
-    # #md"# Chapter 6: Surface normals and multiple objects"
-
-    # @inline function hit_sphere2(center::Vec3{T}, radius::T, r::Ray{T}) where T
-    #     oc = r.origin - center
-    #     #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
-    #     a = 1
-    #     b = 2oc ⋅ r.dir
-    #     c = (oc ⋅ oc) - radius^2
-    #     discriminant = b*b - 4a*c
-    #     if discriminant < 0
-    #         return -1
-    #     else
-    #         return (-b - sqrt(discriminant)) / 2a
-    #     end
-    # end
-
-    # @inline function sphere_scene2(r::Ray{T}) where T
-    #     sphere_center = SA[T(0),T(0),T(-1)]
-    #     t = hit_sphere2(sphere_center, T(0.5), r) # sphere of radius 0.5 centered at z=-1
-    #     if t > T(0)
-    #         n⃗ = normalize(point(r, t) - sphere_center) # normal vector. typed n\vec
-    #         return T(0.5)*n⃗ + SA[T(0.5),T(0.5),T(0.5)] # remap normal to rgb
-    #     else
-    #         skycolor(r)
-    #     end
-    # end
+    @test (@ballocs shoot_rays1(40, 20, sphere_scene1, Float32) samples=3) < 85
 
     # # claforte: this got significantly worse after Vec3{T} was integrated...
     # # WAS: 
@@ -233,23 +175,23 @@ end
     # # Eliminate unnecessary r.dir ⋅ r.dir: 
     # #   61.586 μs (82 allocations: 241.72 KiB)
     # #print("@btime main(200,100,sphere_scene2, Float32):")
-    # main(200,100,sphere_scene2, Float32)
+    shoot_rays1(200,100,sphere_scene2, Float32)
 
-    # @assert reflect(SA[0.6,-0.8,0.0], SA[0.0,1.0,0.0]) == SA[0.6,0.8,0.0] # diagram's example
+    @assert RayTracingWeekend.reflect(SA[0.6,-0.8,0.0], SA[0.0,1.0,0.0]) == SA[0.6,0.8,0.0]
 
-    # default_camera(SA[0f0,0f0,0f0]) # Float32 camera
+    default_camera(SA[0f0,0f0,0f0]) # Float32 camera
 
-    # get_ray(default_camera(SA[0f0,0f0,0f0]), 0.0f0, 0.0f0)
-    # #@btime get_ray(default_camera(), 0.0f0, 0.0f0)
+    get_ray(default_camera(SA[0f0,0f0,0f0]), 0.0f0, 0.0f0)
+    
+    @test_no_allocs get_ray(default_camera(SA[0f0,0f0,0f0]), 0.0f0, 0.0f0)
 
-    # # Float32/Float64
-    # ELEM_TYPE = Float64
+    ELEM_TYPE = Float64 # Float32/Float64
 
-    # t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
+    t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 
-    # # Using @paulmelis' style of hit(): @inbounds for i in eachindex(hittables) and Union{HitRecord, Nothing}
-    # #   951.447 μs (65574 allocations: 5.12 MiB)
-    # render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
+    # Using @paulmelis' style of hit(): @inbounds for i in eachindex(hittables) and Union{HitRecord, Nothing}
+    #   951.447 μs (65574 allocations: 5.12 MiB)
+    render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
 
     # # Using @paulmelis' style of hit(): @inbounds for i in eachindex(hittables) and Union{HitRecord, Nothing}
     # #   101.161 μs (4314 allocations: 459.41 KiB)
