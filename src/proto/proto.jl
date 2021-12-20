@@ -16,6 +16,11 @@ ELEM_TYPE = Float64
 
 t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 
+t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_type=ELEM_TYPE)
+
+t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
+						elem_type=ELEM_TYPE)
+
 # After some optimization:
 #  46.506 ms (917106 allocations: 16.33 MiB)
 # Using convert(Float32, ...) instead of MyFloat(...):
@@ -97,8 +102,6 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 
 
 #render(scene_blue_red_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
-
-t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_type=ELEM_TYPE)
 
 # took ~20s (really rough timing) in REPL, before optimization
 # after optimization: 
@@ -192,7 +195,7 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
-@btime render($_scene_random_spheres, $t_cam1, 200, 32) 
+@benchmark render($_scene_random_spheres, $t_cam1, 200, 32) 
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)
@@ -227,10 +230,6 @@ _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
 #    1305.767627 seconds (5.53 G allocations: 411.741 GiB, 9.97% gc time)
 #print("@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000):")
 #@time render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 1920, 1000)
-
-
-t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
-						elem_type=ELEM_TYPE)
 
 # Before optimization:
 #  5.993 s  (193097930 allocations: 11.92 GiB)
