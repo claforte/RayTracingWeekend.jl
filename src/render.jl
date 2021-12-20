@@ -8,8 +8,8 @@
 function render(scene::HittableList, cam::Camera{T}, image_width=400,
 				n_samples=1) where T
 	# Image
-	aspect_ratio = T(16.0/9.0) # TODO: use cam.aspect_ratio for consistency
-	image_height = convert(Int64, floor(image_width / aspect_ratio))
+	aspect_ratio = 16//9 # TODO: use cam.aspect_ratio for consistency
+	image_height = image_width ÷ aspect_ratio
 
 	# Render
 	img = zeros(RGB{T}, image_height, image_width)
