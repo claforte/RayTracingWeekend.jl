@@ -85,79 +85,6 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 
 #render(scene_4_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 
-#md"""# Dielectrics
-
-# from Section 10.2 Snell's Law:
-# ![Ray refraction](https://raytracing.github.io/images/fig-1.13-refraction.jpg)
-
-# Refracted angle `sinθ′ = (η/η′)⋅sinθ`, where η (\eta) are the refractive indices.
-
-# Split the parts of the ray into `R′=R′⊥+R′∥` (perpendicular and parallel to n⃗′)."""
-
-# """
-# 	Args:
-# 		refraction_ratio: incident refraction index divided by refraction index of 
-# 			hit surface. i.e. η/η′ in the figure above"""
-@inline @fastmath function refract(dir::Vec3{T}, n⃗::Vec3{T}, refraction_ratio::T) where T
-	cosθ = min(-dir ⋅ n⃗, one(T))
-	r_out_perp = refraction_ratio * (dir + cosθ*n⃗)
-	r_out_parallel = -√(abs(one(T)-squared_length(r_out_perp))) * n⃗
-	normalize(r_out_perp + r_out_parallel)
-end
-
-# unchanged angle
-@assert refract((@SVector[0.6,-0.8,0]), (@SVector[0.0,1.0,0.0]), 1.0) == @SVector[0.6,-0.8,0.0] 
-
-# wider angle
-t_refract_widerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 2.0)
-@assert isapprox(t_refract_widerθ, @SVector[0.87519,-0.483779,0.0]; atol=1e-3)
-
-# narrower angle
-t_refract_narrowerθ = refract(@SVector[0.6,-0.8,0.0], @SVector[0.0,1.0,0.0], 0.5)
-@assert isapprox(t_refract_narrowerθ, @SVector[0.3,-0.953939,0.0]; atol=1e-3)
-
-struct Dielectric{T} <: Material{T}
-	ir::T # index of refraction, i.e. η.
-end
-
-@inline @fastmath function reflectance(cosθ, refraction_ratio)
-	# Use Schlick's approximation for reflectance.
-	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
-	r0 = (1-refraction_ratio) / (1+refraction_ratio)
-	r0 = r0^2
-	r0 + (1-r0)*((1-cosθ)^5)
-end
-
-@inline @fastmath function scatter(mat::Dielectric{T}, r_in::Ray{T}, rec::HitRecord{T}) where T
-	attenuation = SA{T}[1,1,1]
-	refraction_ratio = rec.front_face ? (one(T)/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
-	cosθ = min(-r_in.dir⋅rec.n⃗, one(T))
-	sinθ = √(one(T) - cosθ^2)
-	cannot_refract = refraction_ratio * sinθ > one(T)
-	if cannot_refract || reflectance(cosθ, refraction_ratio) > trand(T)
-		dir = reflect(r_in.dir, rec.n⃗)
-	else
-		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
-	end
-	Scatter(Ray{T}(rec.p, dir), attenuation) # TODO: rename reflected -> !absorbed?
-end
-
-#"From C++: Image 15: Glass sphere that sometimes refracts"
-@inline function scene_diel_spheres(left_radius=0.5; elem_type::Type{T}) where T # dielectric spheres
-	spheres = Sphere[]
-	
-	# small center sphere
-	push!(spheres, Sphere((SA{T}[0,0,-1]), T(0.5), Lambertian(SA{T}[0.1,0.2,0.5])))
-	
-	# ground sphere (planet?)
-	push!(spheres, Sphere((SA{T}[0,-100.5,-1]), T(100), Lambertian(SA{T}[0.8,0.8,0.0])))
-	
-	# # left and right spheres.
-	# # Use a negative radius on the left sphere to create a "thin bubble" 
-	push!(spheres, Sphere((SA{T}[-1,0,-1]), T(left_radius), Dielectric(T(1.5)))) 
-	push!(spheres, Sphere((SA{T}[1,0,-1]), T(0.5), Metal((SA{T}[0.8,0.6,0.2]), T(0))))
-	HittableList(spheres)
-end
 
 #render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
 #render(scene_diel_spheres(), default_camera(), 320, 32)
@@ -169,56 +96,7 @@ end
 #																 (SA{ELEM_TYPE}[0,1,0]), ELEM_TYPE(20)), 96, 16)
 
 
-#md"# Positioning camera"
-
-function scene_blue_red_spheres(; elem_type::Type{T}) where T # dielectric spheres
-	spheres = Sphere[]
-	R = cos(pi/4)
-	push!(spheres, Sphere((SA{T}[-R,0,-1]), R, Lambertian(SA{T}[0,0,1]))) 
-	push!(spheres, Sphere((SA{T}[ R,0,-1]), R, Lambertian(SA{T}[1,0,0]))) 
-	HittableList(spheres)
-end
-
 #render(scene_blue_red_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
-
-#md"# Random spheres"
-
-function scene_random_spheres(; elem_type::Type{T}) where T
-	spheres = Sphere[]
-
-	# ground 
-	push!(spheres, Sphere((SA{T}[0,-1000,-1]), T(1000), 
-						  Lambertian(SA{T}[0.5,0.5,0.5])))
-
-	for a in -11:10, b in -11:10
-		choose_mat = trand(T)
-		center = SA[a + T(0.9)*trand(T), T(0.2), b + T(0.9)*trand(T)]
-
-		# skip spheres too close?
-		if norm(center - SA{T}[4,0.2,0]) < T(0.9) continue end 
-			
-		if choose_mat < T(0.8)
-			# diffuse
-			albedo = @SVector[trand(T) for i ∈ 1:3] .* @SVector[trand(T) for i ∈ 1:3]
-			push!(spheres, Sphere(center, T(0.2), Lambertian(albedo)))
-		elseif choose_mat < T(0.95)
-			# metal
-			albedo = @SVector[random_between(T(0.5),T(1.0)) for i ∈ 1:3]
-			fuzz = random_between(T(0.0), T(5.0))
-			push!(spheres, Sphere(center, T(0.2), Metal(albedo, fuzz)))
-		else
-			# glass
-			push!(spheres, Sphere(center, T(0.2), Dielectric(T(1.5))))
-		end
-	end
-
-	push!(spheres, Sphere((SA{T}[0,1,0]), T(1), Dielectric(T(1.5))))
-	push!(spheres, Sphere((SA{T}[-4,1,0]), T(1), 
-						  Lambertian(SA{T}[0.4,0.2,0.1])))
-	push!(spheres, Sphere((SA{T}[4,1,0]), T(1), 
-						  Metal((SA{T}[0.7,0.6,0.5]), T(0))))
-	HittableList(spheres)
-end
 
 t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_type=ELEM_TYPE)
 
