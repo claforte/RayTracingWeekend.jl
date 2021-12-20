@@ -13,24 +13,7 @@ export Camera, Dielectric, Hittable, HittableList, HitRecord, Lambertian, Materi
 export scene_2_spheres, scene_4_spheres, scene_blue_red_spheres, scene_diel_spheres, scene_random_spheres
 export TRNG
 
-const Vec3{T<:AbstractFloat} = SVector{3, T}
-
-# Adapted from @Christ_Foster's: https://discourse.julialang.org/t/ray-tracing-in-a-week-end-julia-vs-simd-optimized-c/72958/40
-@inline @inbounds function Base.getproperty(v::SVector{3}, name::Symbol)
-    name === :x || name === :r ? getfield(v, :data)[1] :
-    name === :y || name === :g ? getfield(v, :data)[2] :
-    name === :z || name === :b ? getfield(v, :data)[3] : getfield(v, name)
-end
-
-@inline @inbounds function Base.getproperty(v::SVector{2}, name::Symbol)
-    name === :x || name === :r ? getfield(v, :data)[1] :
-    name === :y || name === :g ? getfield(v, :data)[2] : getfield(v, name)
-end
-
-@inline squared_length(v::Vec3) = v ⋅ v
-@inline near_zero(v::Vec3) = squared_length(v) < 1e-5
-@inline rgb(v::Vec3) = RGB(v...)
-@inline rgb_gamma2(v::Vec3) = RGB(sqrt.(v)...)
+include("vec.jl")
 
 struct Ray{T}
 	origin::Vec3{T} # Point 
@@ -105,32 +88,10 @@ struct Scatter{T<: AbstractFloat}
 	@inline Scatter(r::Ray{T},a::Vec3{T},reflected=true) where T = new{T}(r,a,reflected)
 end
 
-struct Lambertian{T} <: Material{T}
-	albedo::Vec3{T}
-end
-
 """Compute reflection vector for v (pointing to surface) and normal n⃗.
 
 	See [diagram](https://raytracing.github.io/books/RayTracingInOneWeekend.html#metal/mirroredlightreflection)"""
 @inline @fastmath reflect(v::Vec3{T}, n⃗::Vec3{T}) where T = v - (2v⋅n⃗)*n⃗
-
-"""Create a scattered ray emitted by `mat` from incident Ray `r`. 
-
-	Args:
-		rec: the HitRecord of the surface from which to scatter the ray.
-
-	Return `nothing`` if it's fully absorbed. """
-@inline @fastmath function scatter(mat::Lambertian{T}, r::Ray{T}, rec::HitRecord{T})::Scatter{T} where T
-	scatter_dir = rec.n⃗ + random_vec3_on_sphere(T)
-	if near_zero(scatter_dir) # Catch degenerate scatter direction
-		scatter_dir = rec.n⃗ 
-	else
-		scatter_dir = normalize(scatter_dir)
-	end
-	scattered_r = Ray{T}(rec.p, scatter_dir)
-	attenuation = mat.albedo
-	return Scatter(scattered_r, attenuation)
-end
 
 @inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
     oc = r.origin - s.center
@@ -176,15 +137,6 @@ end
 
 @inline color_vec3_in_rgb(v::Vec3{T}) where T = 0.5normalize(v) + SA{T}[0.5,0.5,0.5]
 
-struct Metal{T} <: Material{T}
-	albedo::Vec3{T}
-	fuzz::T # how big the sphere used to generate fuzzy reflection rays. 0=none
-	@inline Metal(a::Vec3{T}, f::T=0.0) where T = new{T}(a,f)
-end
-@inline @fastmath function scatter(mat::Metal{T}, r_in::Ray{T}, rec::HitRecord)::Scatter{T} where T
-	reflected = normalize(reflect(r_in.dir, rec.n⃗) + mat.fuzz*random_vec3_on_sphere(T))
-	Scatter(Ray(rec.p, reflected), mat.albedo)
-end
 
 """Compute color for a ray, recursively
 
@@ -274,10 +226,6 @@ end
 	normalize(r_out_perp + r_out_parallel)
 end
 
-struct Dielectric{T} <: Material{T}
-	ir::T # index of refraction, i.e. η.
-end
-
 @inline @fastmath function reflectance(cosθ, refraction_ratio)
 	# Use Schlick's approximation for reflectance.
 	# claforte: may be buggy? I'm getting black pixels in the Hollow Glass Sphere...
@@ -286,19 +234,7 @@ end
 	r0 + (1-r0)*((1-cosθ)^5)
 end
 
-@inline @fastmath function scatter(mat::Dielectric{T}, r_in::Ray{T}, rec::HitRecord{T}) where T
-	attenuation = SA{T}[1,1,1]
-	refraction_ratio = rec.front_face ? (one(T)/mat.ir) : mat.ir # i.e. ηᵢ/ηₜ
-	cosθ = min(-r_in.dir⋅rec.n⃗, one(T))
-	sinθ = √(one(T) - cosθ^2)
-	cannot_refract = refraction_ratio * sinθ > one(T)
-	if cannot_refract || reflectance(cosθ, refraction_ratio) > trand(T)
-		dir = reflect(r_in.dir, rec.n⃗)
-	else
-		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
-	end
-	Scatter(Ray{T}(rec.p, dir), attenuation) # TODO: rename reflected -> !absorbed?
-end
+include("material.jl")
 
 include("scenes.jl")
 
