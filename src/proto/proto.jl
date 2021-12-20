@@ -192,6 +192,8 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 #  304.877 ms (1884433 allocations: 144.26 MiB)
 # Extract the scene creation from the render() call:
 #  300.344 ms (1883484 allocations: 144.21 MiB)
+# Separate the module's reusable functions/classes from this proto.jl
+#  296.824 ms (min) (1909996 allocs: 146.23 MiB)
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
@@ -271,5 +273,5 @@ _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
 using Profile
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 16, 1)
 Profile.clear_malloc_data()
-render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 17, 13)
+render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 320, 64)
 
