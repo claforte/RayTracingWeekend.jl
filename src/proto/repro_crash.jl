@@ -1,62 +1,8 @@
-"""
-To reproduce crash:
-1. Start Julia with some threads, e.g. 
-   `julia --project=. --threads=8 repro_crash.jl`
-
-Search in this file for "claforte CRASH" for debugging notes.
-
-
-Typical segmentation fault:
-
-claforte@ub-claforte:~/.julia/depot/dev/RayTracingWeekend/src/proto> julia --project=. --threads=8 repro_crash.jl 
-
-signal (11): Segmentation fault
-in expression starting at /home/claforte/.julia/depot/dev/RayTracingWeekend/src/proto/repro_crash.jl:6
-jl_lookup_generic_ at /buildworker/worker/package_linux64/build/src/gf.c:2347 [inlined]
-jl_apply_generic at /buildworker/worker/package_linux64/build/src/gf.c:2415
-wait at ./task.jl:322 [inlined]
-threading_run at ./threadingconstructs.jl:34
-macro expansion at ./threadingconstructs.jl:93 [inlined]
-render at /home/claforte/.julia/depot/dev/RayTracingWeekend/src/RayTracingWeekend.jl:331
-unknown function (ip: 0x7ff85b9985f7)
-_jl_invoke at /buildworker/worker/package_linux64/build/src/gf.c:2237 [inlined]
-jl_apply_generic at /buildworker/worker/package_linux64/build/src/gf.c:2419
-jl_apply at /buildworker/worker/package_linux64/build/src/julia.h:1703 [inlined]
-do_call at /buildworker/worker/package_linux64/build/src/interpreter.c:115
-eval_value at /buildworker/worker/package_linux64/build/src/interpreter.c:204
-eval_stmt_value at /buildworker/worker/package_linux64/build/src/interpreter.c:155 [inlined]
-eval_body at /buildworker/worker/package_linux64/build/src/interpreter.c:562
-jl_interpret_toplevel_thunk at /buildworker/worker/package_linux64/build/src/interpreter.c:670
-jl_toplevel_eval_flex at /buildworker/worker/package_linux64/build/src/toplevel.c:877
-jl_toplevel_eval_flex at /buildworker/worker/package_linux64/build/src/toplevel.c:825
-jl_toplevel_eval_in at /buildworker/worker/package_linux64/build/src/toplevel.c:929
-eval at ./boot.jl:360 [inlined]
-include_string at ./loading.jl:1094
-_jl_invoke at /buildworker/worker/package_linux64/build/src/gf.c:2237 [inlined]
-jl_apply_generic at /buildworker/worker/package_linux64/build/src/gf.c:2419
-_include at ./loading.jl:1148
-include at ./Base.jl:386
-_jl_invoke at /buildworker/worker/package_linux64/build/src/gf.c:2237 [inlined]
-jl_apply_generic at /buildworker/worker/package_linux64/build/src/gf.c:2419
-exec_options at ./client.jl:285
-_start at ./client.jl:485
-jfptr__start_34289.clone_1 at /home/claforte/.julia/lib/julia/sys.so (unknown line)
-_jl_invoke at /buildworker/worker/package_linux64/build/src/gf.c:2237 [inlined]
-jl_apply_generic at /buildworker/worker/package_linux64/build/src/gf.c:2419
-jl_apply at /buildworker/worker/package_linux64/build/src/julia.h:1703 [inlined]
-true_main at /buildworker/worker/package_linux64/build/src/jlapi.c:560
-repl_entrypoint at /buildworker/worker/package_linux64/build/src/jlapi.c:702
-main at julia (unknown line)
-__libc_start_main at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
-unknown function (ip: 0x4007d8)
-Allocations: 12282419 (Pool: 12278054; Big: 4365); GC: 5
-Segmentation fault (core dumped)
-
-"""
-
 using RayTracingWeekend
+using BenchmarkTools
 #using StaticArrays
 #using Images
+
 
 using Images, LinearAlgebra, Random, RandomNumbers.Xorshifts, StaticArrays
 
@@ -97,45 +43,45 @@ using Images, LinearAlgebra, Random, RandomNumbers.Xorshifts, StaticArrays
 
 # Instantiate 1 RNG (Random Number Generator) per thread, for performance
 # Fix the random seeds, to make it easier to benchmark changes.
-const TRNG = [Xoroshiro128Plus(i) for i = 1:Threads.nthreads()]    # claforte CRASH: When I commented-out this line, the crash occured.
+#const TRNG = [Xoroshiro128Plus(i) for i = 1:128]    # claforte CRASH: When I commented-out this line, the crash occured.
 
-reseed!() = for (i,rng) in enumerate(TRNG) Random.seed!(rng, i) end # reset the seed
-reseed!()
+# reseed!() = for (i,rng) in enumerate(TRNG) Random.seed!(rng, i) end # reset the seed
+# reseed!()
 
-@inline function trand() # thread-local rand()
-    @inbounds rng = TRNG[Threads.threadid()]
-    rand(rng)
-end
+# @inline function trand() # thread-local rand()
+#     @inbounds rng = TRNG[Threads.threadid()]
+#     rand(rng)
+# end
 
-@inline function trand(::Type{T}) where T # thread-local rand()
-    @inbounds rng = TRNG[Threads.threadid()]
-    rand(rng, T)
-end
+# @inline function trand(::Type{T}) where T # thread-local rand()
+#     @inbounds rng = TRNG[Threads.threadid()]
+#     rand(rng, T)
+# end
 
-@inline function random_vec3_in_sphere(::Type{T}) where T # equiv to random_in_unit_sphere()
-	while true
-		p = random_vec3(T(-1), T(1))
-		if p⋅p <= 1
-			return p
-		end
-	end
-end
+# @inline function random_vec3_in_sphere(::Type{T}) where T # equiv to random_in_unit_sphere()
+# 	while true
+# 		p = random_vec3(T(-1), T(1))
+# 		if p⋅p <= 1
+# 			return p
+# 		end
+# 	end
+# end
 
-@inline random_between(min::T=0, max::T=1) where T = trand(T)*(max-min) + min # equiv to random_double()
-@inline random_vec3(min::T, max::T) where T = @inbounds @SVector[random_between(min, max) for i ∈ 1:3]
-@inline random_vec2(min::T, max::T) where T = @inbounds @SVector[random_between(min, max) for i ∈ 1:2]
+# @inline random_between(min::T=0, max::T=1) where T = trand(T)*(max-min) + min # equiv to random_double()
+# @inline random_vec3(min::T, max::T) where T = @inbounds @SVector[random_between(min, max) for i ∈ 1:3]
+# @inline random_vec2(min::T, max::T) where T = @inbounds @SVector[random_between(min, max) for i ∈ 1:2]
 
-"Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
-@inline random_vec3_on_sphere(::Type{T}) where T = normalize(random_vec3_in_sphere(T))
+# "Random unit vector. Equivalent to C++'s `unit_vector(random_in_unit_sphere())`"
+# @inline random_vec3_on_sphere(::Type{T}) where T = normalize(random_vec3_in_sphere(T))
 
-@inline function random_vec2_in_disk(::Type{T}) where T # equiv to random_in_unit_disk()
-	while true
-		p = random_vec2(T(-1), T(1))
-		if p⋅p <= 1
-			return p
-		end
-	end
-end
+# @inline function random_vec2_in_disk(::Type{T}) where T # equiv to random_in_unit_disk()
+# 	while true
+# 		p = random_vec2(T(-1), T(1))
+# 		if p⋅p <= 1
+# 			return p
+# 		end
+# 	end
+# end
 
 # "An object that can be hit by Ray"
 # abstract type Hittable end
@@ -188,67 +134,67 @@ end
 # """Compute reflection vector for v (pointing to surface) and normal n⃗.
 
 # 	See [diagram](https://raytracing.github.io/books/RayTracingInOneWeekend.html#metal/mirroredlightreflection)"""
-@inline @fastmath reflect(v::Vec3{T}, n⃗::Vec3{T}) where T = v - (2v⋅n⃗)*n⃗
+# @inline @fastmath reflect(v::Vec3{T}, n⃗::Vec3{T}) where T = v - (2v⋅n⃗)*n⃗
 
-"""Create a scattered ray emitted by `mat` from incident Ray `r`. 
+# """Create a scattered ray emitted by `mat` from incident Ray `r`. 
 
-	Args:
-		rec: the HitRecord of the surface from which to scatter the ray.
+# 	Args:
+# 		rec: the HitRecord of the surface from which to scatter the ray.
 
-	Return `nothing`` if it's fully absorbed. """
-@inline @fastmath function scatter(mat::Lambertian{T}, r::Ray{T}, rec::HitRecord{T})::Scatter{T} where T
-	scatter_dir = rec.n⃗ + random_vec3_on_sphere(T)
-	if near_zero(scatter_dir) # Catch degenerate scatter direction
-		scatter_dir = rec.n⃗ 
-	else
-		scatter_dir = normalize(scatter_dir)
-	end
-	scattered_r = Ray{T}(rec.p, scatter_dir)
-	attenuation = mat.albedo
-	return Scatter(scattered_r, attenuation)
-end
+# 	Return `nothing`` if it's fully absorbed. """
+# @inline @fastmath function scatter(mat::Lambertian{T}, r::Ray{T}, rec::HitRecord{T})::Scatter{T} where T
+# 	scatter_dir = rec.n⃗ + random_vec3_on_sphere(T)
+# 	if near_zero(scatter_dir) # Catch degenerate scatter direction
+# 		scatter_dir = rec.n⃗ 
+# 	else
+# 		scatter_dir = normalize(scatter_dir)
+# 	end
+# 	scattered_r = Ray{T}(rec.p, scatter_dir)
+# 	attenuation = mat.albedo
+# 	return Scatter(scattered_r, attenuation)
+# end
 
-@inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
-    oc = r.origin - s.center
-    #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
-	a = 1
-	half_b = oc ⋅ r.dir
-    c = oc⋅oc - s.radius^2
-    discriminant = half_b^2 - a*c
-	if discriminant < 0 return nothing end # no hit!
-	sqrtd = √discriminant
+# @inline @fastmath function hit(s::Sphere{T}, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
+#     oc = r.origin - s.center
+#     #a = r.dir ⋅ r.dir # unnecessary since `r.dir` is normalized
+# 	a = 1
+# 	half_b = oc ⋅ r.dir
+#     c = oc⋅oc - s.radius^2
+#     discriminant = half_b^2 - a*c
+# 	if discriminant < 0 return nothing end # no hit!
+# 	sqrtd = √discriminant
 	
-	# Find the nearest root that lies in the acceptable range
-	root = (-half_b - sqrtd) / a	
-	if root < tmin || tmax < root
-		root = (-half_b + sqrtd) / a
-		if root < tmin || tmax < root
-			return nothing # no hit!
-		end
-	end
+# 	# Find the nearest root that lies in the acceptable range
+# 	root = (-half_b - sqrtd) / a	
+# 	if root < tmin || tmax < root
+# 		root = (-half_b + sqrtd) / a
+# 		if root < tmin || tmax < root
+# 			return nothing # no hit!
+# 		end
+# 	end
 	
-	t = root
-	p = point(r, t)
-	n⃗ = (p - s.center) / s.radius
-	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
-end
+# 	t = root
+# 	p = point(r, t)
+# 	n⃗ = (p - s.center) / s.radius
+# 	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
+# end
 
-const HittableList = Vector{Hittable}
+# const HittableList = Vector{Hittable}
 
-"""Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
-@inline function hit(hittables::HittableList, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
-    closest = tmax # closest t so far
-    best_rec::Union{HitRecord,Nothing} = nothing # by default, no hit
-    @inbounds for i in eachindex(hittables) # @paulmelis reported gave him a 4X speedup?!
-		h = hittables[i]
-        rec = hit(h, r, tmin, closest)
-        if rec !== nothing
-            best_rec = rec
-            closest = best_rec.t # i.e. ignore any further hit > this one's.
-        end
-    end
-    best_rec
-end
+# """Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
+# @inline function hit(hittables::HittableList, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
+#     closest = tmax # closest t so far
+#     best_rec::Union{HitRecord,Nothing} = nothing # by default, no hit
+#     @inbounds for i in eachindex(hittables) # @paulmelis reported gave him a 4X speedup?!
+# 		h = hittables[i]
+#         rec = hit(h, r, tmin, closest)
+#         if rec !== nothing
+#             best_rec = rec
+#             closest = best_rec.t # i.e. ignore any further hit > this one's.
+#         end
+#     end
+#     best_rec
+# end
 
 #@inline color_vec3_in_rgb(v::Vec3{T}) where T = 0.5normalize(v) + SA{T}[0.5,0.5,0.5]
 
@@ -332,87 +278,87 @@ end
 # My guess: anything that uses TRNG, directly or indirectly, needs to be redefined in this file instead of used from the module.
 #
 
-@inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
-	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
-	offset = c.u * rd.x + c.v * rd.y #offset = c.u * rd.x + c.v * rd.y
-    Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
-									 t*c.vertical - c.origin - offset))
-end
+# @inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
+# 	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
+# 	offset = c.u * rd.x + c.v * rd.y #offset = c.u * rd.x + c.v * rd.y
+#     Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
+# 									 t*c.vertical - c.origin - offset))
+# end
 
-"""Compute color for a ray, recursively
+# """Compute color for a ray, recursively
 
-	Args:
-		depth: how many more levels of recursive ray bounces can we still compute?"""
-@inline @fastmath function ray_color(r::Ray{T}, world::HittableList, depth=16) where T
-    if depth <= 0
-		return SA{T}[0,0,0]
-	end
+# 	Args:
+# 		depth: how many more levels of recursive ray bounces can we still compute?"""
+# @inline @fastmath function ray_color(r::Ray{T}, world::HittableList, depth=16) where T
+#     if depth <= 0
+# 		return SA{T}[0,0,0]
+# 	end
 		
-	rec::Union{HitRecord,Nothing} = hit(world, r, T(1e-4), typemax(T))
-    if rec !== nothing
-		# For debugging, represent vectors as RGB:
-		# claforte TODO: adapt to latest code!
-		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
-		# return color_vec3_in_rgb(rec.n⃗) # show the normal in RGB
-		# return color_vec3_in_rgb(rec.p + rec.n⃗)
-		# return color_vec3_in_rgb(random_vec3_in_sphere())
-		#return color_vec3_in_rgb(rec.n⃗ + random_vec3_in_sphere())
+# 	rec::Union{HitRecord,Nothing} = hit(world, r, T(1e-4), typemax(T))
+#     if rec !== nothing
+# 		# For debugging, represent vectors as RGB:
+# 		# claforte TODO: adapt to latest code!
+# 		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
+# 		# return color_vec3_in_rgb(rec.n⃗) # show the normal in RGB
+# 		# return color_vec3_in_rgb(rec.p + rec.n⃗)
+# 		# return color_vec3_in_rgb(random_vec3_in_sphere())
+# 		#return color_vec3_in_rgb(rec.n⃗ + random_vec3_in_sphere())
 
-        s = scatter(rec.mat, r, rec)
-		if s.reflected
-			return s.attenuation .* ray_color(s.r, world, depth-1)
-		else
-			return SA{T}[0,0,0]
-		end
-    else
-        skycolor(r)
-    end
-end
+#         s = scatter(rec.mat, r, rec)
+# 		if s.reflected
+# 			return s.attenuation .* ray_color(s.r, world, depth-1)
+# 		else
+# 			return SA{T}[0,0,0]
+# 		end
+#     else
+#         skycolor(r)
+#     end
+# end
 
-"""Render an image of `scene` using the specified camera, number of samples.
+# """Render an image of `scene` using the specified camera, number of samples.
 
-	Args:
-		scene: a HittableList, e.g. a list of spheres
-		n_samples: number of samples per pixel, eq. to C++ samples_per_pixel
+# 	Args:
+# 		scene: a HittableList, e.g. a list of spheres
+# 		n_samples: number of samples per pixel, eq. to C++ samples_per_pixel
 
-	Equivalent to C++'s `main` function."""
-function render(scene::HittableList, cam::Camera{T}, image_width=400,
-				n_samples=1) where T
-	# Image
-	aspect_ratio = T(16.0/9.0) # TODO: use cam.aspect_ratio for consistency
-	image_height = convert(Int64, floor(image_width / aspect_ratio))
+# 	Equivalent to C++'s `main` function."""
+# function render(scene::HittableList, cam::Camera{T}, image_width=400,
+# 				n_samples=1) where T
+# 	# Image
+# 	aspect_ratio = T(16.0/9.0) # TODO: use cam.aspect_ratio for consistency
+# 	image_height = convert(Int64, floor(image_width / aspect_ratio))
 
-	# Render
-	img = zeros(RGB{T}, image_height, image_width)
-	f32_image_width = convert(Float32, image_width)
-	f32_image_height = convert(Float32, image_height)
+# 	# Render
+# 	img = zeros(RGB{T}, image_height, image_width)
+# 	f32_image_width = convert(Float32, image_width)
+# 	f32_image_height = convert(Float32, image_height)
 	
-	# Reset the random seeds, so we always get the same images...
-	# Makes comparing performance more accurate.
-	reseed!()
+# 	# Reset the random seeds, so we always get the same images...
+# 	# Makes comparing performance more accurate.
+# 	reseed!()
 
-	Threads.@threads for i in 1:image_height
-		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
-			accum_color = SA{T}[0,0,0]
-			u = convert(T, j/image_width)
-			v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
+# 	Threads.@threads for i in 1:image_height
+# 		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
+# 			accum_color = SA{T}[0,0,0]
+# 			u = convert(T, j/image_width)
+# 			v = convert(T, (image_height-i)/image_height) # i is Y-down, v is Y-up!
 			
-			for s in 1:n_samples
-				if s == 1 # 1st sample is always centered
-					δu = δv = T(0)
-				else
-					# Supersampling antialiasing.
-					δu = trand(T) / f32_image_width
-					δv = trand(T) / f32_image_height
-				end
-				ray = get_ray(cam, u+δu, v+δv)
-				accum_color += ray_color(ray, scene)
-			end
-			img[i,j] = rgb_gamma2(accum_color / n_samples)
-		end
-	end
-	img
-end
+# 			for s in 1:n_samples
+# 				if s == 1 # 1st sample is always centered
+# 					δu = δv = T(0)
+# 				else
+# 					# Supersampling antialiasing.
+# 					δu = trand(T) / f32_image_width
+# 					δv = trand(T) / f32_image_height
+# 				end
+# 				ray = get_ray(cam, u+δu, v+δv)
+# 				accum_color += ray_color(ray, scene)
+# 			end
+# 			img[i,j] = rgb_gamma2(accum_color / n_samples)
+# 		end
+# 	end
+# 	img
+# end
 
 # """
 # 	Args:
@@ -515,3 +461,10 @@ end
 ELEM_TYPE = Float64
 t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16)
+
+t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_type=ELEM_TYPE)
+
+print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
+_scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
+render(_scene_random_spheres, t_cam1, 200, 32) 
+@benchmark render($_scene_random_spheres, $t_cam1, 200, 32) 

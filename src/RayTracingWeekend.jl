@@ -1,14 +1,17 @@
 module RayTracingWeekend
 
-using Images, LinearAlgebra, Random, RandomNumbers.Xorshifts, StaticArrays
+using Images
+using LinearAlgebra
+using Random
+using RandomNumbers.Xorshifts
+using StaticArrays
 
 export color_vec3_in_rgb, default_camera, get_ray, hit, near_zero, point, random_between, random_vec2, 
         random_vec2_in_disk, random_vec3, random_vec3_in_sphere, random_vec3_on_sphere, ray_color, ray_to_HitRecord, reflect, 
         reflectance, refract, render, reseed!, rgb, rgb_gamma2, scatter, skycolor, squared_length, trand
 export Camera, Dielectric, Hittable, HittableList, HitRecord, Lambertian, Material, Metal, Ray, Scatter, Sphere, Vec3
 export scene_2_spheres, scene_4_spheres, scene_blue_red_spheres, scene_diel_spheres, scene_random_spheres
-
-export TRNG 
+export TRNG
 
 const Vec3{T<:AbstractFloat} = SVector{3, T}
 
@@ -43,21 +46,31 @@ end
     (one(T)-t)*white + t*skyblue
 end
 
-# Instantiate 1 RNG (Random Number Generator) per thread, for performance
-# Fix the random seeds, to make it easier to benchmark changes.
-const TRNG = [Xoroshiro128Plus(i) for i = 1:Threads.nthreads()]
+# Per-thread Random Number Generator. Initialized later...
+const TRNG = Xoroshiro128Plus[]
 
-reseed!() = for (i,rng) in enumerate(TRNG) Random.seed!(rng, i) end # reset the seed
-reseed!()
-
-@inline function trand() # thread-local rand()
-    @inbounds rng = TRNG[Threads.threadid()]
-    rand(rng)
+function __init__()
+	# Instantiate 1 RNG (Random Number Generator) per thread, for performance.
+	# This can't be done during precompilation since the number of threads isn't known then.
+	resize!(TRNG, Threads.nthreads())
+	for i in 1:Threads.nthreads()
+		TRNG[i] = Xoroshiro128Plus(i)
+	end
+	nothing
 end
 
-@inline function trand(::Type{T}) where T # thread-local rand()
-    @inbounds rng = TRNG[Threads.threadid()]
-    rand(rng, T)
+# Reset the per-thread random seeds to make results reproducible
+reseed!() = for i in 1:Threads.nthreads() Random.seed!(TRNG[i], i) end
+
+"Per-thread rand()"
+@inline function trand() 
+	@inbounds rng = TRNG[Threads.threadid()]
+	rand(rng)
+end
+
+@inline function trand(::Type{T}) where T 
+	@inbounds rng = TRNG[Threads.threadid()]
+	rand(rng, T)
 end
 
 @inline function random_vec3_in_sphere(::Type{T}) where T # equiv to random_in_unit_sphere()
@@ -271,6 +284,11 @@ function default_camera(lookfrom::Vec3{T}=(SA{T}[0,0,0]),
 	Camera{T}(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius)
 end
 
+default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist; elem_type::Type{T}) where T =
+	default_camera(Vec3{T}(lookfrom), Vec3{T}(lookat), Vec3{T}(vup), 
+		T(vfov), T(aspect_ratio), T(aperture), T(focus_dist)
+	)
+
 @inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
 	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
 	offset = c.u * rd.x + c.v * rd.y #offset = c.u * rd.x + c.v * rd.y
@@ -330,8 +348,7 @@ function render(scene::HittableList, cam::Camera{T}, image_width=400,
 	# Makes comparing performance more accurate.
 	reseed!()
 
-	#Threads.@threads # claforte: uncomment for CRASH?!
-	for i in 1:image_height
+	Threads.@threads for i in 1:image_height
 		@inbounds for j in 1:image_width # iterate over each row (FASTER?!)
 			accum_color = SA{T}[0,0,0]
 			u = convert(T, j/image_width)

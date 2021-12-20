@@ -957,7 +957,6 @@ t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_ty
 # Extract the scene creation from the render() call:
 #  300.344 ms (1883484 allocations: 144.21 MiB)
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
-reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
 @btime render($_scene_random_spheres, $t_cam1, 200, 32) 
 
