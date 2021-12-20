@@ -1,7 +1,6 @@
 # RayTracingWeekend
 
-Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.github.io/books/RayTracingInOneWeekend.html) and [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl)
-
+Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
 
 ![This final cell (bunch of spheres) runs in 3.2s](img/pluto_RayTracingWeekend_final_cell.png)
 
@@ -9,6 +8,22 @@ Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.gi
 
 ![Final image of book 1 - random spheres](img/scene_random_spheres_1920x1080.png)
 
+# Run
+
+You have 2 options.
+
+## pluto_RayTracingWeekend.jl
+
+This is a Pluto.jl notebook, best suited for learning alongside (e.g. if you're a Julia beginner) or quick interactive experimentation. This self-contained version matches Peter Shirley's first book, "Raytracing in 1 weekend". See below (`Adapting C++ --> Julia`) for tips on how to start it, and how it differs from the C++ version.
+
+## This module + src/proto/proto.jl
+
+This is a short script that runs various tests and records historical timings on my Ryzen 3700 PC. It's best suited for benchmarking.
+
+To run interactively with vscode:
+1. F1, `Julia: Start REPL`
+1. `] activate RayTracingWeekend`
+2. Open `src/proto/proto.jl`, press shift-enter to run lines, see plots.
 
 # Implementation details
 
@@ -28,7 +43,7 @@ If you're interested in the performance details and the latest optimizations, pl
 
 https://github.com/GPSnoopy/RayTracingInOneWeekend
 
-All perf tests were run on my Ryzen 2700 (not overclocked) on Ubuntu 20.04.
+All perf tests were run on my Ryzen 3700 (not overclocked) on Ubuntu 20.04.
 
 ## GPSnoopy's C++ implementation using GCC
 
