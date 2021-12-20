@@ -1,3 +1,5 @@
+# Concrete materials
+
 struct Lambertian{T} <: Material{T}
 	albedo::Vec3{T}
 end

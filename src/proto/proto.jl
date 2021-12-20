@@ -268,7 +268,7 @@ _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
 #    6.766 ms (161000 allocations: 12.40 MiB)
 # @inbounds and @simd in low-level functions
 #    6.519 ms (160609 allocations: 12.37 MiB)
-#render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
+render(scene_diel_spheres(; elem_type=ELEM_TYPE), t_cam2, 96, 16)
 
 using Profile
 render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 16, 1)
