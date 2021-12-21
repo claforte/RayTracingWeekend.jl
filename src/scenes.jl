@@ -46,8 +46,8 @@ function scene_blue_red_spheres(; elem_type::Type{T}) where T # dielectric spher
 	HittableList(spheres)
 end
 
-function scene_random_spheres(; elem_type::Type{T}) where T
-	spheres = Sphere[]
+function scene_random_spheres(; elem_type::Type{T}, moving=true) where T
+	spheres = HittableList()
 
 	# ground 
 	push!(spheres, Sphere((SA{T}[0,-1000,-1]), T(1000), 
@@ -63,7 +63,15 @@ function scene_random_spheres(; elem_type::Type{T}) where T
 		if choose_mat < T(0.8)
 			# diffuse
 			albedo = @SVector[trand(T) for i ∈ 1:3] .* @SVector[trand(T) for i ∈ 1:3]
-			push!(spheres, Sphere(center, T(0.2), Lambertian(albedo)))
+			mat = Lambertian(albedo)
+			
+			if !moving
+				shape = Sphere(center, T(0.2), mat)
+			else
+				center1 = center + SA[T(0),random_between(T(0),T(0.5)),T(0)]
+				shape = MovingSphere(center, center1, T(0), T(1), T(0.2), mat)
+			end
+			push!(spheres, shape)
 		elseif choose_mat < T(0.95)
 			# metal
 			albedo = @SVector[random_between(T(0.5),T(1.0)) for i ∈ 1:3]

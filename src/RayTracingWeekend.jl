@@ -16,7 +16,7 @@ include("rand.jl")
 export reseed!, trand, random_vec3_in_sphere, random_between, random_vec3, random_vec2, 
 	random_vec3_on_sphere, random_vec2_in_disk
 include("shapes.jl")
-export Sphere, MovingSphere
+export Sphere, MovingSphere, sphere
 include("hit.jl")
 export point, ray_to_HitRecord, hit
 include("ray_color.jl")

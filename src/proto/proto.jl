@@ -17,10 +17,20 @@ ELEM_TYPE = Float64
 
 t_default_cam = default_camera(SA{ELEM_TYPE}[0,0,0])
 
-t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0; elem_type=ELEM_TYPE)
+t_cam1 = default_camera([13,2,3], [0,0,0], [0,1,0], 20, 16/9, 0.1, 10.0, 0.0, 1.0; elem_type=ELEM_TYPE)
 
-t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]); 
+t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-[0,0,-1]), 0.0, 1.0; 
 						elem_type=ELEM_TYPE)
+
+
+# TODO: move this in specific test file, get in the habit to run the tests each commit.
+white64 = SA[1.0,1.0,1.0]
+ms = MovingSphere(SA[1.0,0.0,1.0], SA[0.0,1.0,0.0], 1.0, 2.0, 3.0, Lambertian(white64))
+sphere(ms, 1.5)
+# verify no alloc!
+@btime sphere(ms, 1.5)
+
+
 
 # After some optimization:
 #  46.506 ms (917106 allocations: 16.33 MiB)
@@ -199,10 +209,13 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 #  296.824 ms (min) (1909996 allocs: 146.23 MiB)
 # Version 0.3 (clean-up) then introduce Ray.time always set to 0:
 #  312.229 ms (min) Memory estimate: 146.23 MiB, allocs estimate: 1909996.
+# w/ MovingSphere motion blur, incl. HittableList instead of Sphere[]:
+#  433.077 ms (min) Memory estimate: 145.94 MiB, allocs estimate: 1906174
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
 @benchmark render($_scene_random_spheres, $t_cam1, 200, 32) 
+render(_scene_random_spheres, t_cam1, 640, 64)
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)

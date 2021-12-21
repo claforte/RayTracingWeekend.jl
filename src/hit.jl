@@ -34,6 +34,10 @@ end
 	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
 end
 
+@inline @fastmath function hit(ms::MovingSphere{T}, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
+    hit(sphere(ms, r.time), r, tmin, tmax)
+end
+
 """Find closest hit between `Ray r` and a list of Hittable objects `h`, within distance `tmin` < `tmax`"""
 @inline function hit(hittables::HittableList, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Nothing} where T
     closest = tmax # closest t so far
