@@ -16,7 +16,7 @@ end
 		return SA{T}[0,0,0]
 	end
 		
-	rec::Union{HitRecord,Nothing} = hit(world, r, T(1e-4), typemax(T))
+	rec::Union{HitRecord,Bool} = hit(world, r, T(1e-4), typemax(T))
     if rec !== nothing
 		# For debugging, represent vectors as RGB:
 		# claforte TODO: adapt to latest code!

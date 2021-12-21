@@ -29,7 +29,7 @@ struct HitRecord{T <: AbstractFloat}
 	# If false, the ray hit from within.
 	front_face::Bool
 	
-	mat::Material{T}
+	mat::Material{T} # claforte: store a Ref instead?
 
 	@inline HitRecord(t::T,p,n⃗,front_face,mat) where T = new{T}(t,p,n⃗,front_face,mat)
 end

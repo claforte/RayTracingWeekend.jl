@@ -8,8 +8,13 @@ end
 
 	Args:
 		rec: the HitRecord of the surface from which to scatter the ray.
-
-	Return `nothing`` if it's fully absorbed. """
+        
+    Return: one of:
+        HitRecord: if a hit from the scattered ray, to another surface
+        true: if a hit occured from the scattered ray, e.g. with a boundingbox, when we don't care about the exact location
+            (in practice this shouldn't occur, but for consistency with hit(), let's keep this option opened...)
+        false: if not hit occured or the ray was absorbed entirely
+        """
 @inline @fastmath function scatter(mat::Lambertian{T}, r::Ray{T}, rec::HitRecord{T})::Scatter{T} where T
 	scatter_dir = rec.n⃗ + random_vec3_on_sphere(T)
 	if near_zero(scatter_dir) # Catch degenerate scatter direction

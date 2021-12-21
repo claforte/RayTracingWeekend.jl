@@ -30,6 +30,30 @@ sphere(ms, 1.5)
 # verify no alloc!
 @btime sphere(ms, 1.5)
 
+box = Aabb(SA[-1.0,-1.0,1.0],SA[1.0,1.0,0.0])
+
+# Adapted from Andrew Kensler's version
+# claforte: not finished yet
+@inline @fastmath function hit(box::Aabb{T}, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Bool} where T
+	#@inbounds # @simd? @turbo?
+	for a in 1:3 # axis
+		invD = T(1.0) / r.dir[a]
+		t0 = (box.min[a] - r.origin[a]) * invD
+		t1 = (box.max[a] - r.origin[a]) * invD
+		if invD < T(0)
+			(t0,t1) = t1,t0 # swap
+		end
+		tmin = t0 > tmin ? t0 : tmin 
+		tmax = t1 < tmax ? t1 : tmax
+		if (tmax < tmin)
+			return nothing # no hit!
+		end
+	end
+
+	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
+end
+
+# hit(box, Ray(SA[-5.0,0.0,0.1], normalize(SA[1.0,0.0,-0.1]), 0.0), 0.1, 10.0)
 
 
 # After some optimization:
