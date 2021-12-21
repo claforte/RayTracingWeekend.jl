@@ -5,6 +5,7 @@ struct Ray{T}
     time::T # Time "when" the ray exists (used for motion blur)
 end
 
+# claforte: TODO: replace by constructor
 @inline function ray(origin::Vec3{T}=(SA{T}[0,0,0]), dir::Vec3{T}=(SA{T}[0,0,-1]), time::T=T(0)) where T
     Ray{T}(origin, dir, time)
 end

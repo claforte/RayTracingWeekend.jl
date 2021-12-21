@@ -67,7 +67,7 @@ function shoot_rays1(nx::Int, ny::Int, scene, ::Type{T}) where T
         @inbounds for i in 1:ny # Julia is column-major, i.e. iterate 1 column at a time
             u = T(j/nx)
             v = T((ny-i)/ny) # Y-up!
-            ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical))
+            ray = Ray(origin, normalize(lower_left_corner + u*horizontal + v*vertical), T(0))
             #r = x/nx
             #g = y/ny
             #b = 0.2
@@ -76,6 +76,8 @@ function shoot_rays1(nx::Int, ny::Int, scene, ::Type{T}) where T
     end
     img
 end
+
+white64 = SA[1.0,1.0,1.0]
 
 # @fastmath speeds up a lot!
 @inline @fastmath function hit_sphere1(center::Vec3{T}, radius::T, r::Ray{T}) where T
@@ -121,6 +123,10 @@ end
     end
 end
 
+@testset "sphere()" begin
+    ms = MovingSphere(SA[1.0,0.0,1.0], SA[0.0,1.0,0.0], 1.0, 2.0, 3.0, Lambertian(white64))
+    @test_no_allocs sphere($ms, 1.5)
+end
 
 @testset "RayTracingWeekend.jl" begin
     t_col = SA[0.4, 0.5, 0.1] # test color
@@ -137,11 +143,11 @@ end
 
     _origin = SA[0.0,0.0,0.0]
     _v3_minusY = SA[0.0,-1.0,0.0]
-    _t_ray1 = Ray(_origin, _v3_minusY)
+    _t_ray1 = Ray(_origin, _v3_minusY, 0.0)
     
     # Float32: 6.161 ns (0 allocations: 0 bytes)
     # Float64: 6.900 ns (0 allocations: 0 bytes)
-    @test_no_allocs Ray($_origin, $_v3_minusY)
+    @test_no_allocs Ray($_origin, $_v3_minusY, 0.0)
     @test_no_allocs point($_t_ray1, 0.5) # 1.412 ns
     @test_no_allocs skycolor($_t_ray1) # 1.402 ns
     @test_no_allocs rgb(skycolor($_t_ray1)) # 1.412 ns
