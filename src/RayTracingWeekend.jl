@@ -11,10 +11,12 @@ export Vec3, squared_length, near_zero, rgb, rgb_gamma2
 include("init.jl")
 export TRNG
 include("structs.jl")
-export Ray, Hittable, HittableList, Material, HitRecord, Sphere, Scatter
+export Ray, Hittable, HittableList, Material, HitRecord, Scatter
 include("rand.jl")
 export reseed!, trand, random_vec3_in_sphere, random_between, random_vec3, random_vec2, 
 	random_vec3_on_sphere, random_vec2_in_disk
+include("shapes.jl")
+export Sphere, MovingSphere
 include("hit.jl")
 export point, ray_to_HitRecord, hit
 include("ray_color.jl")

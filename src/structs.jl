@@ -2,6 +2,11 @@
 struct Ray{T}
 	origin::Vec3{T} # Point 
 	dir::Vec3{T} # Vec3 # direction (unit vector)
+    time::T # Time "when" the ray exists (used for motion blur)
+end
+
+@inline function ray(origin::Vec3{T}=(SA{T}[0,0,0]), dir::Vec3{T}=(SA{T}[0,0,-1]), time::T=T(0)) where T
+    Ray{T}(origin, dir, time)
 end
 
 "An object that can be hit by Ray"
@@ -26,12 +31,6 @@ struct HitRecord{T <: AbstractFloat}
 	mat::Material{T}
 
 	@inline HitRecord(t::T,p,n⃗,front_face,mat) where T = new{T}(t,p,n⃗,front_face,mat)
-end
-
-struct Sphere{T <: AbstractFloat} <: Hittable
-	center::Vec3{T}
-	radius::T
-	mat::Material{T}
 end
 
 struct Scatter{T<: AbstractFloat}

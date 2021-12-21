@@ -7,6 +7,8 @@ struct Camera{T <: AbstractFloat}
 	v::Vec3{T}
 	w::Vec3{T}
 	lens_radius::T
+	time0::T # time when shutter opened
+	time1::T # time when shutter closed
 end
 
 """
@@ -19,7 +21,8 @@ function default_camera(lookfrom::Vec3{T}=(SA{T}[0,0,0]),
 						lookat::Vec3{T}=(SA{T}[0,0,-1]), 
 						vup::Vec3{T}=(SA{T}[0,1,0]), 
 						vfov::T=T(90), aspect_ratio::T=T(16/9),
-						aperture::T=T(0), focus_dist::T=T(1)) where T
+						aperture::T=T(0), focus_dist::T=T(1),
+						time0::T=T(0), time1::T=T(0)) where T
 	viewport_height = T(2) * tand(vfov/T(2))
 	viewport_width = aspect_ratio * viewport_height
 	
@@ -32,17 +35,20 @@ function default_camera(lookfrom::Vec3{T}=(SA{T}[0,0,0]),
 	vertical = focus_dist * viewport_height * v
 	lower_left_corner = origin - horizontal/T(2) - vertical/T(2) - focus_dist*w
 	lens_radius = aperture/T(2)
-	Camera{T}(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius)
+	Camera{T}(origin, lower_left_corner, horizontal, vertical, u, v, w, lens_radius,
+		time0, time1)
 end
 
-default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist; elem_type::Type{T}) where T =
+default_camera(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist,
+			   time0=0, time1=time0; elem_type::Type{T}) where T =
 	default_camera(Vec3{T}(lookfrom), Vec3{T}(lookat), Vec3{T}(vup), 
-		T(vfov), T(aspect_ratio), T(aperture), T(focus_dist)
+		T(vfov), T(aspect_ratio), T(aperture), T(focus_dist), T(time0), T(time1)
 	)
 
 @inline @fastmath function get_ray(c::Camera{T}, s::T, t::T) where T
 	rd = SVector{2,T}(c.lens_radius * random_vec2_in_disk(T))
 	offset = c.u * rd.x + c.v * rd.y #offset = c.u * rd.x + c.v * rd.y
-    Ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
-									 t*c.vertical - c.origin - offset))
+    ray(c.origin + offset, normalize(c.lower_left_corner + s*c.horizontal +
+									 t*c.vertical - c.origin - offset),
+		random_between(c.time0, c.time1))
 end

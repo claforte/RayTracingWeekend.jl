@@ -17,7 +17,7 @@ end
 	else
 		scatter_dir = normalize(scatter_dir)
 	end
-	scattered_r = Ray{T}(rec.p, scatter_dir)
+	scattered_r = Ray{T}(rec.p, scatter_dir, r.time)
 	attenuation = mat.albedo
 	return Scatter(scattered_r, attenuation)
 end
@@ -30,7 +30,7 @@ end
 
 @inline @fastmath function scatter(mat::Metal{T}, r_in::Ray{T}, rec::HitRecord)::Scatter{T} where T
 	reflected = normalize(reflect(r_in.dir, rec.n⃗) + mat.fuzz*random_vec3_on_sphere(T))
-	Scatter(Ray(rec.p, reflected), mat.albedo)
+	Scatter(Ray(rec.p, reflected, r_in.time), mat.albedo)
 end
 
 "Dielectric, i.e. transparent/refractive material"
@@ -49,5 +49,5 @@ end
 	else
 		dir = refract(r_in.dir, rec.n⃗, refraction_ratio)
 	end
-	Scatter(Ray{T}(rec.p, dir), attenuation) # TODO: rename reflected -> !absorbed?
+	Scatter(Ray{T}(rec.p, dir, r_in.time), attenuation) # TODO: rename reflected -> !absorbed?
 end

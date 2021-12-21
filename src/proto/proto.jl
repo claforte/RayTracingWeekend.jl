@@ -2,6 +2,7 @@
 # Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.github.io/books/RayTracingInOneWeekend.html) and 
 # [cshenton's Julia implementation](https://github.com/cshenton/RayTracing.jl)"
 
+using Revise
 using RayTracingWeekend
 
 using BenchmarkTools
@@ -63,6 +64,8 @@ t_cam2 = default_camera([3,3,2], [0,0,-1], [0,1,0], 20, 16/9, 2.0, norm([3,3,2]-
 #   976.365 μs (65574 allocations: 5.12 MiB)
 # Using @paulmelis' style of hit(): @inbounds for i in eachindex(hittables) and Union{HitRecord, Nothing}
 #   951.447 μs (65574 allocations: 5.12 MiB)
+# Version 0.3 (clean-up) then introduce Ray.time always set to 0:
+#   951.617 μs (65574 allocations: 5.12 MiB) (min)
 render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 16) # 16 samples
 
 # Iterate over each column: 614.820 μs
@@ -194,6 +197,8 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 #  300.344 ms (1883484 allocations: 144.21 MiB)
 # Separate the module's reusable functions/classes from this proto.jl
 #  296.824 ms (min) (1909996 allocs: 146.23 MiB)
+# Version 0.3 (clean-up) then introduce Ray.time always set to 0:
+#  312.229 ms (min) Memory estimate: 146.23 MiB, allocs estimate: 1909996.
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
