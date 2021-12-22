@@ -30,31 +30,19 @@ sphere(ms, 1.5)
 # verify no alloc!
 @btime sphere(ms, 1.5)
 
-box = Aabb(SA[-1.0,-1.0,1.0],SA[1.0,1.0,0.0])
+box = Aabb(SA[-1.0,-1.0,-1.0],SA[1.0,1.0,1.0])
+@assert hit(box, Ray(SA[-5.0,0.1,0.1], normalize(SA[1.0,0.1,0.1]), 0.0), 0.1, 1000.0)
+@assert hit(box, Ray(SA[-5.0,-5.0,-5.0], normalize(SA[1.0,1.0,1.0]), 0.0), 0.1, 1000.0)
+@assert hit(box, Ray(SA[-5.0,0.0,0.1], normalize(SA[1.0,0.0,-0.1]), 0.0), 0.1, 10.0)
 
-# Adapted from Andrew Kensler's version
-# claforte: not finished yet
-@inline @fastmath function hit(box::Aabb{T}, r::Ray{T}, tmin::T, tmax::T)::Union{HitRecord,Bool} where T
-	#@inbounds # @simd? @turbo?
-	for a in 1:3 # axis
-		invD = T(1.0) / r.dir[a]
-		t0 = (box.min[a] - r.origin[a]) * invD
-		t1 = (box.max[a] - r.origin[a]) * invD
-		if invD < T(0)
-			(t0,t1) = t1,t0 # swap
-		end
-		tmin = t0 > tmin ? t0 : tmin 
-		tmax = t1 < tmax ? t1 : tmax
-		if (tmax < tmin)
-			return nothing # no hit!
-		end
-	end
 
-	return ray_to_HitRecord(t, p, n⃗, r.dir, s.mat)
-end
+box1 = Aabb(SA[ 1.0, 1.0,0.0],SA[2.0,2.0,1.0]) # 1x1x1 box top-right
+box2 = Aabb(SA[-1.0, 1.0,0.0],SA[0.0,2.0,1.0]) # top-left
+box3 = Aabb(SA[-1.0,-1.0,0.0],SA[0.0,0.0,1.0]) # bottom-left
+box4 = Aabb(SA[ 1.0,-1.0,0.0],SA[2.0,0.0,1.0]) # bottom-right
+Hittable[box1,box2,box3,box4]
 
-# hit(box, Ray(SA[-5.0,0.0,0.1], normalize(SA[1.0,0.0,-0.1]), 0.0), 0.1, 10.0)
-
+bla = 2
 
 # After some optimization:
 #  46.506 ms (917106 allocations: 16.33 MiB)
@@ -238,8 +226,9 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
-@benchmark render($_scene_random_spheres, $t_cam1, 200, 32) 
-render(_scene_random_spheres, t_cam1, 640, 64)
+#@benchmark 
+@time render(_scene_random_spheres, t_cam1, 200, 32) 
+@time render(_scene_random_spheres, t_cam1, 640, 64)
 
 # After some optimization, took ~5.6 hours:
 #   20171.646846 seconds (94.73 G allocations: 2.496 TiB, 1.06% gc time)

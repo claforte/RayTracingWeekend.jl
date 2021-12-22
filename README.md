@@ -10,7 +10,7 @@ Adapted from [Ray Tracing In One Weekend by Peter Shirley](https://raytracing.gi
 
 # Run
 
-You have 2 options.
+You have 2 options:
 
 ## pluto_RayTracingWeekend.jl
 
@@ -18,7 +18,7 @@ This is a Pluto.jl notebook, best suited for learning alongside (e.g. if you're 
 
 ## This module + src/proto/proto.jl
 
-This is a short script that runs various tests and records historical timings on my Ryzen 3700 PC. It's best suited for benchmarking.
+This is a short script that runs various tests and records historical timings on my Ryzen 3700 PC. It's best suited for benchmarking. NOTE: if you want to test the same optimized version I did, based on the content of book 1 (i.e. no BVH, no motion blur), you should first `git checkout "v0.3"`, i.e. use this [release](https://github.com/claforte/RayTracingWeekend.jl/releases/tag/v0.3).
 
 To run interactively with vscode:
 1. F1, `Julia: Start REPL`
@@ -140,7 +140,7 @@ Unlike the C++ implementation:
 - When saving final pixels, IIUC the C++ code uses a Y-up coordinate system for writing images. Julia's `Image`s and matrices point down, so I used `(ny-i)` instead of `i` for the row number.
 - Pluto.jl supports having cells/code defined in arbitrary orders. I tried to keep the code from low-level to high-level, but in some cases it wasn't practical, especially since Pluto.jl doesn't seem to support moving more than one cell at a time.
 - I normalize the ray direction right away, instead of optionally doing it in later functions... I think it's easier to reason about it that way, and the extra cost is probably marginal.
-- I use a `const _no_hit = HitRecord{Float64}()` to indicate a no hit... I thought this was speed things up, but this is probably a bad idea...
+- hit() returns a Union{HitRecord,Bool}, instead of writing both a HitRecord and returning a bool, like the C++ implementation. IIRC this sped up this implementation (reduced memory usage) a little.
 
 
 # References:

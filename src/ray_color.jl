@@ -17,7 +17,7 @@ end
 	end
 		
 	rec::Union{HitRecord,Bool} = hit(world, r, T(1e-4), typemax(T))
-    if rec !== nothing
+    if typeof(rec) <: HitRecord
 		# For debugging, represent vectors as RGB:
 		# claforte TODO: adapt to latest code!
 		# return color_vec3_in_rgb(rec.p) # show the normalized hit point
