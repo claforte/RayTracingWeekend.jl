@@ -28,19 +28,19 @@ white64 = SA[1.0,1.0,1.0]
 ms = MovingSphere(SA[1.0,0.0,1.0], SA[0.0,1.0,0.0], 1.0, 2.0, 3.0, Lambertian(white64))
 sphere(ms, 1.5)
 # verify no alloc!
-@btime sphere(ms, 1.5)
+#@btime sphere(ms, 1.5)
 
 box = Aabb(SA[-1.0,-1.0,-1.0],SA[1.0,1.0,1.0])
-@assert hit(box, Ray(SA[-5.0,0.1,0.1], normalize(SA[1.0,0.1,0.1]), 0.0), 0.1, 1000.0)
-@assert hit(box, Ray(SA[-5.0,-5.0,-5.0], normalize(SA[1.0,1.0,1.0]), 0.0), 0.1, 1000.0)
-@assert hit(box, Ray(SA[-5.0,0.0,0.1], normalize(SA[1.0,0.0,-0.1]), 0.0), 0.1, 10.0)
+# @assert hit(box, Ray(SA[-5.0,0.1,0.1], normalize(SA[1.0,0.1,0.1]), 0.0), 0.1, 1000.0)
+# @assert hit(box, Ray(SA[-5.0,-5.0,-5.0], normalize(SA[1.0,1.0,1.0]), 0.0), 0.1, 1000.0)
+# @assert hit(box, Ray(SA[-5.0,0.0,0.1], normalize(SA[1.0,0.0,-0.1]), 0.0), 0.1, 10.0)
 
 
-box1 = Aabb(SA[ 1.0, 1.0,0.0],SA[2.0,2.0,1.0]) # 1x1x1 box top-right
-box2 = Aabb(SA[-1.0, 1.0,0.0],SA[0.0,2.0,1.0]) # top-left
-box3 = Aabb(SA[-1.0,-1.0,0.0],SA[0.0,0.0,1.0]) # bottom-left
-box4 = Aabb(SA[ 1.0,-1.0,0.0],SA[2.0,0.0,1.0]) # bottom-right
-Hittable[box1,box2,box3,box4]
+# box1 = Aabb(SA[ 1.0, 1.0,0.0],SA[2.0,2.0,1.0]) # 1x1x1 box top-right
+# box2 = Aabb(SA[-1.0, 1.0,0.0],SA[0.0,2.0,1.0]) # top-left
+# box3 = Aabb(SA[-1.0,-1.0,0.0],SA[0.0,0.0,1.0]) # bottom-left
+# box4 = Aabb(SA[ 1.0,-1.0,0.0],SA[2.0,0.0,1.0]) # bottom-right
+# Hittable[box1,box2,box3,box4]
 
 bla = 2
 
@@ -225,10 +225,15 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 #  433.077 ms (min) Memory estimate: 145.94 MiB, allocs estimate: 1906174
 # Nearly done implementing BVHs, but perf became terrible, and resulting image was white (temporary bug?):
 #    8.779 s (351435271 allocations: 20.95 GiB) (72% GC)
+# Comment things out: 
+# - Slowdown caused by pre-declaring rec to ::Union{HitRecord,Nothing}?
+# - white bug caused by comparing typeof(rec) == HitRecord?
+#  427.008 ms (1901923 allocations: 145.62 MiB)
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
-#@benchmark 
+
+render(_scene_random_spheres, t_cam1, 200, 32) 
 @btime render($_scene_random_spheres, $t_cam1, 200, 32) 
 @time render(_scene_random_spheres, t_cam1, 640, 64)
 
