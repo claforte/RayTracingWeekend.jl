@@ -223,11 +223,13 @@ render(scene_2_spheres(; elem_type=ELEM_TYPE), t_default_cam, 96, 1) # 1 sample
 #  312.229 ms (min) Memory estimate: 146.23 MiB, allocs estimate: 1909996.
 # w/ MovingSphere motion blur, incl. HittableList instead of Sphere[]:
 #  433.077 ms (min) Memory estimate: 145.94 MiB, allocs estimate: 1906174
+# Nearly done implementing BVHs, but perf became terrible, and resulting image was white (temporary bug?):
+#    8.779 s (351435271 allocations: 20.95 GiB) (72% GC)
 print("render(scene_random_spheres(; elem_type=ELEM_TYPE), t_cam1, 200, 32):")
 reseed!()
 _scene_random_spheres = scene_random_spheres(; elem_type=ELEM_TYPE)
 #@benchmark 
-@time render(_scene_random_spheres, t_cam1, 200, 32) 
+@btime render($_scene_random_spheres, $t_cam1, 200, 32) 
 @time render(_scene_random_spheres, t_cam1, 640, 64)
 
 # After some optimization, took ~5.6 hours:
